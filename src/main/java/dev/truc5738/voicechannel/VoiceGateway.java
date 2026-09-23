@@ -1,0 +1,251 @@
+package dev.truc5738.voicechannel;
+
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public final class VoiceGateway {
+    private static final int MAX_FRAME_SIZE = 16 * 1024;
+    private static final int MAGIC = 0x4D564331;
+    private static final byte HELLO = 1;
+    private static final byte AUDIO = 2;
+    private static final byte GOODBYE = 3;
+
+    private final JavaPlugin plugin;
+    private final VoiceManager manager;
+    private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
+    private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
+        Thread thread = new Thread(r, "Minecraft-VoiceChannel-Gateway");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    private volatile boolean running;
+    private ServerSocket serverSocket;
+    private Thread acceptThread;
+    private String token;
+
+    public VoiceGateway(JavaPlugin plugin, VoiceManager manager) {
+        this.plugin = plugin;
+        this.manager = manager;
+    }
+
+    public boolean start() {
+        if (!plugin.getConfig().getBoolean("voice.gateway.enabled", false)) return false;
+
+        token = plugin.getConfig().getString("voice.gateway.token", "");
+        if (token == null || token.isBlank() || token.equals("change-me")) {
+            token = generateToken();
+            plugin.getConfig().set("voice.gateway.token", token);
+            plugin.saveConfig();
+            plugin.getLogger().info("Generated a new voice gateway token and saved it to config.yml.");
+        }
+
+        String host = plugin.getConfig().getString("voice.gateway.host", "0.0.0.0");
+        int port = plugin.getConfig().getInt("voice.gateway.port", 26467);
+
+        try {
+            serverSocket = new ServerSocket();
+            serverSocket.setReuseAddress(true);
+            serverSocket.bind(new InetSocketAddress(host, port));
+        } catch (IOException exception) {
+            plugin.getLogger().severe("Could not start voice gateway on " + host + ":" + port + ": " + exception.getMessage());
+            return false;
+        }
+
+        running = true;
+        acceptThread = new Thread(this::acceptLoop, "Minecraft-VoiceChannel-Acceptor");
+        acceptThread.setDaemon(true);
+        acceptThread.start();
+
+        plugin.getLogger().info("Voice gateway listening on TCP " + host + ":" + port + ".");
+        plugin.getLogger().info("Gateway uses JVM networking only; no FFmpeg, JAVE2, glibc or native Linux binary is required.");
+        return true;
+    }
+
+    public void stop() {
+        running = false;
+        if (serverSocket != null) {
+            try {
+                serverSocket.close();
+            } catch (IOException ignored) {
+            }
+        }
+        for (Session session : new ArrayList<>(sessions.values())) session.close();
+        sessions.clear();
+        workers.shutdownNow();
+    }
+
+    public int getConnectedClients() {
+        return sessions.size();
+    }
+
+    public void disconnect(UUID uuid) {
+        Session session = sessions.remove(uuid);
+        if (session != null) session.close();
+    }
+
+    private void acceptLoop() {
+        while (running) {
+            try {
+                Socket socket = serverSocket.accept();
+                socket.setTcpNoDelay(true);
+                socket.setKeepAlive(true);
+                workers.submit(() -> handle(socket));
+            } catch (SocketException exception) {
+                if (running) plugin.getLogger().warning("Voice gateway accept error: " + exception.getMessage());
+            } catch (IOException exception) {
+                if (running) plugin.getLogger().warning("Voice gateway accept error: " + exception.getMessage());
+            }
+        }
+    }
+
+    private void handle(Socket socket) {
+        Session session = new Session(socket);
+        try (socket;
+             DataInputStream input = new DataInputStream(socket.getInputStream());
+             DataOutputStream output = new DataOutputStream(socket.getOutputStream())) {
+
+            session.input = input;
+            session.output = output;
+            if (!readHello(session)) return;
+
+            while (running && !socket.isClosed()) {
+                if (input.readInt() != MAGIC) return;
+                byte type = input.readByte();
+                UUID sender = readUuid(input);
+                int sequence = input.readInt();
+                int length = input.readInt();
+
+                if (length < 0 || length > MAX_FRAME_SIZE) return;
+                byte[] payload = input.readNBytes(length);
+                if (payload.length != length) return;
+                if (!sender.equals(session.uuid)) return;
+
+                if (type == AUDIO) {
+                    handleAudio(session, sequence, payload);
+                } else if (type == GOODBYE) {
+                    return;
+                } else {
+                    return;
+                }
+            }
+        } catch (EOFException ignored) {
+        } catch (IOException exception) {
+            if (running) plugin.getLogger().fine("Voice client disconnected: " + exception.getMessage());
+        } finally {
+            if (session.uuid != null) {
+                sessions.remove(session.uuid, session);
+                manager.setConnected(session.uuid, false);
+            }
+        }
+    }
+
+    private boolean readHello(Session session) throws IOException {
+        if (session.input.readInt() != MAGIC) return false;
+        if (session.input.readByte() != HELLO) return false;
+
+        UUID uuid = readUuid(session.input);
+        int sequence = session.input.readInt();
+        int length = session.input.readInt();
+        if (sequence != 0 || length <= 0 || length > 1024) return false;
+
+        byte[] payload = session.input.readNBytes(length);
+        if (payload.length != length) return false;
+
+        String receivedToken = new String(payload, StandardCharsets.UTF_8);
+        if (!MessageDigest.isEqual(
+                receivedToken.getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8))) return false;
+
+        Player player = plugin.getServer().getPlayer(uuid);
+        if (player == null || !player.isOnline()) return false;
+
+        Session previous = sessions.put(uuid, session);
+        if (previous != null && previous != session) previous.close();
+
+        session.uuid = uuid;
+        manager.setConnected(uuid, true);
+        return true;
+    }
+
+    private void handleAudio(Session session, int sequence, byte[] payload) {
+        if (!manager.isConnected(session.uuid) || manager.isMicMuted(session.uuid)) return;
+
+        manager.markSpeaking(session.uuid);
+        VoiceRoute speaker = manager.getRoute(session.uuid);
+        if (speaker == null || speaker.micMuted()) return;
+
+        for (Session recipient : new ArrayList<>(sessions.values())) {
+            if (recipient.uuid == null || recipient.uuid.equals(session.uuid)) continue;
+
+            VoiceRoute listener = manager.getRoute(recipient.uuid);
+            if (listener == null || !listener.canHear(speaker)) continue;
+
+            try {
+                recipient.send(AUDIO, session.uuid, sequence, payload);
+            } catch (IOException exception) {
+                recipient.close();
+            }
+        }
+    }
+
+    private static UUID readUuid(DataInputStream input) throws IOException {
+        return new UUID(input.readLong(), input.readLong());
+    }
+
+    private static String generateToken() {
+        byte[] bytes = new byte[32];
+        new SecureRandom().nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static final class Session {
+        private final Socket socket;
+        private DataInputStream input;
+        private DataOutputStream output;
+        private UUID uuid;
+
+        private Session(Socket socket) {
+            this.socket = socket;
+        }
+
+        private synchronized void send(byte type, UUID sender, int sequence, byte[] payload) throws IOException {
+            if (output == null) throw new IOException("Voice session is not ready.");
+
+            output.writeInt(MAGIC);
+            output.writeByte(type);
+            output.writeLong(sender.getMostSignificantBits());
+            output.writeLong(sender.getLeastSignificantBits());
+            output.writeInt(sequence);
+            output.writeInt(payload.length);
+            output.write(payload);
+            output.flush();
+        }
+
+        private void close() {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+            }
+        }
+    }
+}
