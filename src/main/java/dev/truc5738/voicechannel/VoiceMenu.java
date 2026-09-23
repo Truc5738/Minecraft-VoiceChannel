@@ -126,6 +126,62 @@ public final class VoiceMenu implements Listener {
         openJava(player);
     }
 
+    private void openJavaChannels(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 27, "Voice Channels");
+        int slot = 10;
+        for (String channel : manager.getChannels()) {
+            if (slot >= 17) break;
+            set(inv, slot++, channel, channel.equals(manager.getChannel(player)) ? "Current channel" : "Click to join");
+        }
+        set(inv, 22, "Back", "Return to voice menu");
+        player.openInventory(inv);
+    }
+
+    private void openJavaMutePlayers(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 54, "Player Mute");
+        int slot = 0;
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (target.equals(player) || slot >= 45) continue;
+            set(inv, slot++, target.getName(), manager.isMuted(player, target) ? "Muted: click to unmute" : "Click to mute");
+        }
+        set(inv, 49, "Back", "Return to voice menu");
+        player.openInventory(inv);
+    }
+
+    @EventHandler
+    public void onSubMenuClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        String title = event.getView().getTitle();
+        if (!title.equals("Voice Channels") && !title.equals("Player Mute")) return;
+        event.setCancelled(true);
+        int slot = event.getRawSlot();
+        if (slot == 22 || slot == 49) {
+            openJava(player);
+            return;
+        }
+
+        if (title.equals("Voice Channels") && slot >= 10 && slot < 17) {
+            List<String> channels = new ArrayList<>(manager.getChannels());
+            int index = slot - 10;
+            if (index < channels.size() && manager.joinChannel(player, channels.get(index))) {
+                player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channels.get(index));
+            }
+            openJava(player);
+            return;
+        }
+
+        if (title.equals("Player Mute") && slot >= 0 && slot < 45) {
+            List<Player> targets = new ArrayList<>();
+            for (Player target : Bukkit.getOnlinePlayers()) if (!target.equals(player)) targets.add(target);
+            if (slot < targets.size()) {
+                Player target = targets.get(slot);
+                manager.toggleMute(player, target);
+                player.sendMessage(ChatColor.GREEN + (manager.isMuted(player, target) ? "Player muted." : "Player unmuted."));
+                openJavaMutePlayers(player);
+            }
+        }
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         VoiceChannelPlugin voicePlugin = (VoiceChannelPlugin) plugin;
