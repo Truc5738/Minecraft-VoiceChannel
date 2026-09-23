@@ -1,58 +1,87 @@
 package dev.truc5738.voicechannel;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 public final class VoiceManager {
     private final JavaPlugin plugin;
-    private final Map<UUID, String> channels = new HashMap<>();
-    private final Map<UUID, Set<UUID>> mutedPlayers = new HashMap<>();
-    private final Map<UUID, Double> playerVolumes = new HashMap<>();
-    private final Map<UUID, Boolean> micMuted = new HashMap<>();
-    private final Map<UUID, Boolean> outputMuted = new HashMap<>();
-    private final Map<UUID, Double> ranges = new HashMap<>();
+    private final Map<UUID, String> channels = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<UUID>> mutedPlayers = new ConcurrentHashMap<>();
+    private final Map<UUID, Double> playerVolumes = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> micMuted = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> outputMuted = new ConcurrentHashMap<>();
+    private final Map<UUID, Double> ranges = new ConcurrentHashMap<>();
+    private final Map<UUID, VoiceRoute> routes = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> speakingUntil = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> connected = new ConcurrentHashMap<>();
 
     public VoiceManager(JavaPlugin plugin) {
         this.plugin = plugin;
+        Bukkit.getScheduler().runTaskTimer(plugin, this::refreshRoutes, 1L, 2L);
     }
 
     public String getChannel(Player player) {
-        return channels.computeIfAbsent(player.getUniqueId(), ignored ->
+        return getChannel(player.getUniqueId());
+    }
+
+    public String getChannel(UUID uuid) {
+        return channels.computeIfAbsent(uuid, ignored ->
                 plugin.getConfig().getString("voice.default-channel", "General"));
     }
 
     public void joinChannel(Player player, String channel) {
-        channels.put(player.getUniqueId(), channel);
+        if (channel == null || channel.isBlank()) return;
+        channels.put(player.getUniqueId(), channel.trim());
+        refreshRoute(player);
     }
 
     public void leaveChannel(Player player) {
         channels.remove(player.getUniqueId());
+        refreshRoute(player);
     }
 
     public boolean isMicMuted(Player player) {
-        return micMuted.getOrDefault(player.getUniqueId(), false);
+        return isMicMuted(player.getUniqueId());
+    }
+
+    public boolean isMicMuted(UUID uuid) {
+        return micMuted.getOrDefault(uuid, false);
     }
 
     public boolean toggleMic(Player player) {
-        boolean value = !isMicMuted(player);
-        micMuted.put(player.getUniqueId(), value);
+        return toggleMic(player.getUniqueId());
+    }
+
+    public boolean toggleMic(UUID uuid) {
+        boolean value = !isMicMuted(uuid);
+        micMuted.put(uuid, value);
+        refreshRoute(Bukkit.getPlayer(uuid));
         return value;
     }
 
     public boolean isOutputMuted(Player player) {
-        return outputMuted.getOrDefault(player.getUniqueId(), false);
+        return isOutputMuted(player.getUniqueId());
+    }
+
+    public boolean isOutputMuted(UUID uuid) {
+        return outputMuted.getOrDefault(uuid, false);
     }
 
     public boolean toggleOutput(Player player) {
-        boolean value = !isOutputMuted(player);
-        outputMuted.put(player.getUniqueId(), value);
+        return toggleOutput(player.getUniqueId());
+    }
+
+    public boolean toggleOutput(UUID uuid) {
+        boolean value = !isOutputMuted(uuid);
+        outputMuted.put(uuid, value);
+        refreshRoute(Bukkit.getPlayer(uuid));
         return value;
     }
 
@@ -73,27 +102,97 @@ public final class VoiceManager {
     public void setRange(Player player, double range) {
         double max = plugin.getConfig().getDouble("voice.max-range", 96.0);
         ranges.put(player.getUniqueId(), Math.max(4.0, Math.min(max, range)));
+        refreshRoute(player);
     }
 
     public boolean isMuted(Player viewer, Player target) {
-        return mutedPlayers.getOrDefault(viewer.getUniqueId(), Collections.emptySet())
-                .contains(target.getUniqueId());
+        return isMuted(viewer.getUniqueId(), target.getUniqueId());
+    }
+
+    public boolean isMuted(UUID viewer, UUID target) {
+        return mutedPlayers.getOrDefault(viewer, Collections.emptySet()).contains(target);
     }
 
     public void toggleMute(Player viewer, Player target) {
-        Set<UUID> set = mutedPlayers.computeIfAbsent(viewer.getUniqueId(), ignored -> new HashSet<>());
-        if (!set.add(target.getUniqueId())) {
-            set.remove(target.getUniqueId());
-        }
+        toggleMute(viewer.getUniqueId(), target.getUniqueId());
+    }
+
+    public void toggleMute(UUID viewer, UUID target) {
+        Set<UUID> set = mutedPlayers.computeIfAbsent(viewer, ignored -> ConcurrentHashMap.newKeySet());
+        if (!set.add(target)) set.remove(target);
+        Player player = Bukkit.getPlayer(viewer);
+        if (player != null) refreshRoute(player);
     }
 
     public boolean canHear(Player listener, Player speaker) {
-        if (listener.equals(speaker)) return true;
-        if (isOutputMuted(listener) || isMuted(listener, speaker)) return false;
-        if (!getChannel(listener).equals(getChannel(speaker))) return false;
-        if (isMicMuted(speaker)) return false;
-        return listener.getWorld().equals(speaker.getWorld())
-                && listener.getLocation().distanceSquared(speaker.getLocation()) <= getRange(listener) * getRange(listener);
+        VoiceRoute listenerRoute = routes.get(listener.getUniqueId());
+        VoiceRoute speakerRoute = routes.get(speaker.getUniqueId());
+        return listenerRoute != null && speakerRoute != null && listenerRoute.canHear(speakerRoute);
+    }
+
+    public VoiceRoute getRoute(UUID uuid) {
+        return routes.get(uuid);
+    }
+
+    public void setConnected(UUID uuid, boolean value) {
+        connected.put(uuid, value);
+    }
+
+    public boolean isConnected(UUID uuid) {
+        return connected.getOrDefault(uuid, false);
+    }
+
+    public void markSpeaking(UUID uuid) {
+        speakingUntil.put(uuid, System.currentTimeMillis() + 650L);
+    }
+
+    public boolean isSpeaking(UUID uuid) {
+        return speakingUntil.getOrDefault(uuid, 0L) > System.currentTimeMillis();
+    }
+
+    public int countSpeaking(Player viewer) {
+        VoiceRoute viewerRoute = routes.get(viewer.getUniqueId());
+        if (viewerRoute == null) return 0;
+
+        int count = 0;
+        for (VoiceRoute route : routes.values()) {
+            if (isSpeaking(route.uuid()) && viewerRoute.canHear(route)) count++;
+        }
+        return count;
+    }
+
+    private void refreshRoutes() {
+        for (Player player : Bukkit.getOnlinePlayers()) refreshRoute(player);
+    }
+
+    private void refreshRoute(Player player) {
+        if (player == null || !player.isOnline()) return;
+        UUID uuid = player.getUniqueId();
+        routes.put(uuid, new VoiceRoute(
+                uuid,
+                player.getWorld().getUID(),
+                player.getX(),
+                player.getY(),
+                player.getZ(),
+                getChannel(uuid),
+                isMicMuted(uuid),
+                isOutputMuted(uuid),
+                getRange(player),
+                Set.copyOf(mutedPlayers.getOrDefault(uuid, Collections.emptySet()))
+        ));
+    }
+
+    public void remove(Player player) {
+        UUID uuid = player.getUniqueId();
+        channels.remove(uuid);
+        mutedPlayers.remove(uuid);
+        playerVolumes.remove(uuid);
+        micMuted.remove(uuid);
+        outputMuted.remove(uuid);
+        ranges.remove(uuid);
+        routes.remove(uuid);
+        speakingUntil.remove(uuid);
+        connected.remove(uuid);
     }
 
     public void shutdown() {
@@ -103,5 +202,8 @@ public final class VoiceManager {
         micMuted.clear();
         outputMuted.clear();
         ranges.clear();
+        routes.clear();
+        speakingUntil.clear();
+        connected.clear();
     }
 }
