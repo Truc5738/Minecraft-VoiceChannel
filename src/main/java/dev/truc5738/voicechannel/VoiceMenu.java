@@ -14,6 +14,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import net.kyori.adventure.text.Component;
 
 import org.geysermc.cumulus.form.SimpleForm;
 import org.geysermc.floodgate.api.FloodgateApi;
@@ -137,8 +138,8 @@ public final class VoiceMenu implements Listener {
     private void set(Inventory inventory, int slot, String name, String lore) {
         ItemStack item = new ItemStack(Material.PAPER);
         ItemMeta meta = item.getItemMeta();
-        meta.displayName(ChatColor.WHITE + name);
-        meta.lore(List.of(ChatColor.GRAY + lore));
+        meta.displayName(Component.text(name, net.kyori.adventure.text.format.NamedTextColor.WHITE));
+        meta.lore(List.of(Component.text(lore, net.kyori.adventure.text.format.NamedTextColor.GRAY)));
         item.setItemMeta(meta);
         inventory.setItem(slot, item);
     }
