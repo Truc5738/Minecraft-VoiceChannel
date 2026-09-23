@@ -1,0 +1,20 @@
+name: Minecraft-VoiceChannel
+version: '${version}'
+main: dev.truc5738.voicechannel.VoiceChannelPlugin
+description: Cross-platform voice channel control for Java and Bedrock players
+author: Truc5738
+api-version: '26.2'
+softdepend:
+  - floodgate
+commands:
+  voicechannel:
+    description: Open the voice channel interface
+    usage: /voicechannel
+    permission: voicechannel.use
+permissions:
+  voicechannel.use:
+    description: Allows use of /voicechannel
+    default: true
+  voicechannel.admin:
+    description: Allows voice channel moderation
+    default: op
