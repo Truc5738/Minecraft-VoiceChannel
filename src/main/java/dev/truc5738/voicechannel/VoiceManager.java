@@ -103,8 +103,10 @@ public final class VoiceManager {
     }
 
     public String getChannel(UUID uuid) {
-        return channels.computeIfAbsent(uuid, ignored ->
+        String channel = channels.computeIfAbsent(uuid, ignored ->
                 plugin.getConfig().getString("voice.default-channel", "General"));
+        channelMembers.computeIfAbsent(channel, ignored -> ConcurrentHashMap.newKeySet()).add(uuid);
+        return channel;
     }
 
     public void joinChannelLegacy(Player player, String channel) {
@@ -113,9 +115,13 @@ public final class VoiceManager {
         refreshRoute(player);
     }
 
+    public void joinDefaultChannel(Player player) {
+        String defaultChannel = plugin.getConfig().getString("voice.default-channel", "General");
+        joinChannel(player, defaultChannel);
+    }
+
     public void leaveChannel(Player player) {
-        channels.remove(player.getUniqueId());
-        refreshRoute(player);
+        joinDefaultChannel(player);
     }
 
     public boolean isMicMuted(Player player) {
@@ -257,6 +263,13 @@ public final class VoiceManager {
 
     public void remove(Player player) {
         UUID uuid = player.getUniqueId();
+        String channel = channels.get(uuid);
+        if (channel != null) {
+            Set<UUID> members = channelMembers.get(channel);
+            if (members != null) members.remove(uuid);
+        }
+        for (Set<UUID> members : channelMembers.values()) members.remove(uuid);
+        for (Set<UUID> muted : channelMuted.values()) muted.remove(uuid);
         channels.remove(uuid);
         mutedPlayers.remove(uuid);
         playerVolumes.remove(uuid);
