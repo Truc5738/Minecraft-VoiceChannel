@@ -182,6 +182,53 @@ public final class VoiceMenu implements Listener {
         }
     }
 
+    private void openJavaModeration(Player player) {
+        if (!player.hasPermission("voicechannel.admin")) {
+            player.sendMessage(ChatColor.RED + "You do not have permission.");
+            return;
+        }
+        Inventory inv = Bukkit.createInventory(null, 54, "Channel Moderation");
+        int slot = 0;
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (target.equals(player) || slot >= 45) continue;
+            String state = manager.isChannelMuted(manager.getChannel(player), target.getUniqueId())
+                    ? "Channel muted: click to unmute; right-click to move"
+                    : "Click to channel mute; right-click to move";
+            set(inv, slot++, target.getName(), state);
+        }
+        set(inv, 49, "Back", "Return to voice menu");
+        player.openInventory(inv);
+    }
+
+    @EventHandler
+    public void onModerationClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (!event.getView().getTitle().equals("Channel Moderation")) return;
+        event.setCancelled(true);
+        int slot = event.getRawSlot();
+        if (slot == 49) {
+            openJava(player);
+            return;
+        }
+        if (!player.hasPermission("voicechannel.admin") || slot < 0 || slot >= 45) return;
+
+        List<Player> targets = new ArrayList<>();
+        for (Player target : Bukkit.getOnlinePlayers()) if (!target.equals(player)) targets.add(target);
+        if (slot >= targets.size()) return;
+
+        Player target = targets.get(slot);
+        String channel = manager.getChannel(player);
+        if (event.isRightClick()) {
+            if (manager.kickFromChannel(channel, target.getUniqueId())) {
+                player.sendMessage(ChatColor.YELLOW + "Player moved to the default voice channel: " + target.getName());
+            }
+        } else {
+            manager.toggleChannelMute(channel, target.getUniqueId());
+            player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
+        }
+        openJavaModeration(player);
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         VoiceChannelPlugin voicePlugin = (VoiceChannelPlugin) plugin;
