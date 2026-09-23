@@ -127,6 +127,10 @@ public final class VoiceMenu implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        VoiceChannelPlugin voicePlugin = (VoiceChannelPlugin) plugin;
+        if (voicePlugin.getVoiceGateway() != null) {
+            voicePlugin.getVoiceGateway().disconnect(event.getPlayer().getUniqueId());
+        }
         manager.remove(event.getPlayer());
     }
 
