@@ -11,9 +11,11 @@ import org.bukkit.entity.Player;
 
 public final class VoiceCommand implements CommandExecutor, TabCompleter {
     private final VoiceMenu menu;
+    private final VoiceManager manager;
 
-    public VoiceCommand(VoiceMenu menu) {
+    public VoiceCommand(VoiceMenu menu, VoiceManager manager) {
         this.menu = menu;
+        this.manager = manager;
     }
 
     @Override
@@ -26,7 +28,43 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
             player.sendMessage("You do not have permission to use voice channels.");
             return true;
         }
-        menu.open(player);
+        if (args.length == 0) {
+            menu.open(player);
+            return true;
+        }
+        switch (args[0].toLowerCase()) {
+            case "join" -> {
+                if (args.length < 2) {
+                    player.sendMessage("Usage: /voicechannel join <channel>");
+                } else if (manager.joinChannel(player, args[1])) {
+                    player.sendMessage("Joined voice channel: " + args[1]);
+                } else {
+                    player.sendMessage("That voice channel does not exist.");
+                }
+            }
+            case "private" -> {
+                if (args.length < 3) {
+                    player.sendMessage("Usage: /voicechannel private <name> <password>");
+                } else if (manager.createPrivateChannel(player, args[1], args[2])) {
+                    player.sendMessage("Private voice channel created: " + args[1]);
+                } else {
+                    player.sendMessage("Could not create that private channel.");
+                }
+            }
+            case "privatejoin" -> {
+                if (args.length < 3) {
+                    player.sendMessage("Usage: /voicechannel privatejoin <name> <password>");
+                } else if (manager.joinPrivateChannel(player, args[1], args[2])) {
+                    player.sendMessage("Joined private voice channel: " + args[1]);
+                } else {
+                    player.sendMessage("Invalid private channel or password.");
+                }
+            }
+            case "leave" -> manager.joinDefaultChannel(player);
+            case "mic" -> player.sendMessage("Microphone: " + (manager.toggleMic(player) ? "Muted" : "Active"));
+            case "output" -> player.sendMessage("Voice output: " + (manager.toggleOutput(player) ? "Muted" : "Active"));
+            default -> menu.open(player);
+        }
         return true;
     }
 
