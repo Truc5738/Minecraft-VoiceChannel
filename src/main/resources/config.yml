@@ -1,0 +1,19 @@
+voice:
+  default-channel: General
+  default-range: 32.0
+  max-range: 96.0
+  default-volume: 1.0
+  gateway:
+    enabled: false
+    host: 127.0.0.1
+    port: 26467
+    path: /voice
+    token: change-me
+ui:
+  title: Voice Channel
+  rows: 3
+  no-emoji: true
+channels:
+  General:
+    private: false
+    password: ""
