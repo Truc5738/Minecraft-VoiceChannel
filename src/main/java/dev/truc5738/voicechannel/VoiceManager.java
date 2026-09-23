@@ -21,10 +21,81 @@ public final class VoiceManager {
     private final Map<UUID, VoiceRoute> routes = new ConcurrentHashMap<>();
     private final Map<UUID, Long> speakingUntil = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> connected = new ConcurrentHashMap<>();
+    private final Map<String, UUID> privateOwners = new ConcurrentHashMap<>();
+    private final Map<String, String> privatePasswords = new ConcurrentHashMap<>();
+    private final Map<String, Set<UUID>> channelMembers = new ConcurrentHashMap<>();
+    private final Map<String, Set<UUID>> channelMuted = new ConcurrentHashMap<>();
 
     public VoiceManager(JavaPlugin plugin) {
         this.plugin = plugin;
+        loadConfiguredChannels();
         Bukkit.getScheduler().runTaskTimer(plugin, this::refreshRoutes, 1L, 2L);
+    }
+
+    private void loadConfiguredChannels() {
+        String configured = plugin.getConfig().getString("voice.default-channel", "General");
+        channelMembers.putIfAbsent(configured, ConcurrentHashMap.newKeySet());
+        if (plugin.getConfig().getConfigurationSection("channels") != null) {
+            for (String name : plugin.getConfig().getConfigurationSection("channels").getKeys(false)) {
+                channelMembers.putIfAbsent(name, ConcurrentHashMap.newKeySet());
+            }
+        }
+    }
+
+    public Set<String> getChannels() {
+        return Set.copyOf(channelMembers.keySet());
+    }
+
+    public boolean joinChannel(Player player, String channel) {
+        if (channel == null || channel.isBlank()) return false;
+        String target = channel.trim();
+        if (!channelMembers.containsKey(target) && !privateOwners.containsKey(target)) return false;
+        String current = getChannel(player);
+        channelMembers.computeIfAbsent(current, ignored -> ConcurrentHashMap.newKeySet()).remove(player.getUniqueId());
+        channelMembers.computeIfAbsent(target, ignored -> ConcurrentHashMap.newKeySet()).add(player.getUniqueId());
+        channels.put(player.getUniqueId(), target);
+        refreshRoute(player);
+        return true;
+    }
+
+    public boolean createPrivateChannel(Player owner, String name, String password) {
+        if (name == null || name.isBlank() || password == null) return false;
+        String target = name.trim();
+        if (target.length() > 24 || target.contains(" ") || channelMembers.containsKey(target) || privateOwners.containsKey(target)) return false;
+        privateOwners.put(target, owner.getUniqueId());
+        privatePasswords.put(target, password);
+        channelMembers.put(target, ConcurrentHashMap.newKeySet());
+        return joinChannel(owner, target);
+    }
+
+    public boolean joinPrivateChannel(Player player, String name, String password) {
+        return privateOwners.containsKey(name) && java.util.Objects.equals(privatePasswords.get(name), password)
+                && joinChannel(player, name);
+    }
+
+    public Set<UUID> getChannelMembers(String channel) {
+        return Set.copyOf(channelMembers.getOrDefault(channel, Collections.emptySet()));
+    }
+
+    public boolean isChannelMuted(String channel, UUID speaker) {
+        return channelMuted.getOrDefault(channel, Collections.emptySet()).contains(speaker);
+    }
+
+    public void toggleChannelMute(String channel, UUID speaker) {
+        Set<UUID> set = channelMuted.computeIfAbsent(channel, ignored -> ConcurrentHashMap.newKeySet());
+        if (!set.add(speaker)) set.remove(speaker);
+    }
+
+    public boolean kickFromChannel(String channel, UUID target) {
+        Set<UUID> members = channelMembers.get(channel);
+        if (members == null || !members.remove(target)) return false;
+        Player targetPlayer = Bukkit.getPlayer(target);
+        if (targetPlayer != null) joinDefaultChannel(targetPlayer);
+        return true;
+    }
+
+    public boolean isChannelOwner(Player player) {
+        return player.getUniqueId().equals(privateOwners.get(getChannel(player)));
     }
 
     public String getChannel(Player player) {
@@ -36,7 +107,7 @@ public final class VoiceManager {
                 plugin.getConfig().getString("voice.default-channel", "General"));
     }
 
-    public void joinChannel(Player player, String channel) {
+    public void joinChannelLegacy(Player player, String channel) {
         if (channel == null || channel.isBlank()) return;
         channels.put(player.getUniqueId(), channel.trim());
         refreshRoute(player);
@@ -127,7 +198,8 @@ public final class VoiceManager {
     public boolean canHear(Player listener, Player speaker) {
         VoiceRoute listenerRoute = routes.get(listener.getUniqueId());
         VoiceRoute speakerRoute = routes.get(speaker.getUniqueId());
-        return listenerRoute != null && speakerRoute != null && listenerRoute.canHear(speakerRoute);
+        return listenerRoute != null && speakerRoute != null && listenerRoute.canHear(speakerRoute)
+                && !isChannelMuted(speakerRoute.channel(), speakerRoute.uuid());
     }
 
     public VoiceRoute getRoute(UUID uuid) {
@@ -156,7 +228,8 @@ public final class VoiceManager {
 
         int count = 0;
         for (VoiceRoute route : routes.values()) {
-            if (isSpeaking(route.uuid()) && viewerRoute.canHear(route)) count++;
+            if (!route.uuid().equals(viewer.getUniqueId()) && isSpeaking(route.uuid())
+                    && viewerRoute.canHear(route) && !isChannelMuted(route.channel(), route.uuid())) count++;
         }
         return count;
     }
@@ -205,5 +278,9 @@ public final class VoiceManager {
         routes.clear();
         speakingUntil.clear();
         connected.clear();
+        privateOwners.clear();
+        privatePasswords.clear();
+        channelMembers.clear();
+        channelMuted.clear();
     }
 }
