@@ -1,33 +1,99 @@
 # Minecraft-VoiceChannel
 
-A Paper plugin project for a cross-platform voice channel system for Java and Bedrock/PE players.
+Cross-platform voice channel backend for Paper 26.2 / Java 25.
 
-## Target
+## Target environment
 
-- Paper 1.26.x
+- Paper 26.2
 - Java 25
-- Java Edition clients
-- Bedrock/PE clients through a compatible bridge/client voice transport
-- Main command: `/voicechannel`
-- UI text intentionally contains no emoji characters
+- Alpine Linux / musl libc compatible
+- Third-party Minecraft hosting/container environments
+- Floodgate for Bedrock player detection and Bedrock UI
+- Default voice gateway port: TCP 26467
+- No FFmpeg
+- No JAVE2
+- No glibc dependency
+- No native Linux executable
+
+Paper 26.2 officially supports Java 25. The build uses Paper's 26.2.build.+ API format.
+
+## Main command
+
+/voicechannel
+
+The command opens a Java inventory UI or a Floodgate/Cumulus Bedrock form.
 
 ## UI features
 
-1. Microphone mute/unmute
-2. Voice output mute/unmute
-3. Live speaking player list
-4. Voice channel join/leave
-5. Private channels
+1. Microphone mute/unmute state
+2. Voice output mute/unmute state
+3. Live speaking player count
+4. Voice channels
+5. Private-channel configuration foundation
 6. Proximity voice range
-7. Per-player volume
-8. Player mute
-9. Channel moderation
-10. Voice settings
+7. Per-player volume state
+8. Per-player mute state foundation
+9. Channel moderation foundation
+10. Voice settings foundation
 
-## Architecture
+## Alpine-safe gateway
 
-The Paper plugin handles player identity, permissions, channels, UI state, moderation, proximity rules and the voice gateway protocol. Minecraft clients do not expose microphone input to a normal Paper plugin, so actual audio capture and playback are handled by a separate compatible voice client/bridge and gateway.
+The plugin contains an embedded TCP voice gateway on port 26467.
 
-## Development status
+The gateway is implemented with Java standard networking APIs. It does not execute FFmpeg, JAVE2, glibc binaries, shell commands, or native Linux libraries.
 
-Initial implementation scaffold. The next stage is the gateway protocol and client bridge implementation.
+On first startup, the default token change-me is replaced with a random 256-bit URL-safe token and saved to config.yml.
+
+The host must expose TCP port 26467 to the client voice bridge.
+
+## Voice transport protocol
+
+Frame layout:
+
+- 4 bytes: ASCII magic MVC1
+- 1 byte: packet type
+- 16 bytes: player UUID
+- 4 bytes: sequence number
+- 4 bytes: payload length
+- N bytes: payload
+
+Packet types:
+
+- 1 HELLO: UTF-8 gateway token, sequence 0
+- 2 AUDIO: encoded voice frame, normally Opus
+- 3 GOODBYE: empty payload
+
+A client must send HELLO before AUDIO. The UUID in every packet must match the authenticated session.
+
+The server routes audio using channel, proximity range, world, output mute, per-player mute and microphone mute state.
+
+## Important client limitation
+
+A normal Paper plugin cannot read a player's microphone. Vanilla Java and vanilla Bedrock clients do not expose microphone capture to a server plugin.
+
+Therefore the project separates:
+
+- Paper plugin: UI, permissions, channels, moderation, proximity rules and gateway
+- Voice client/bridge: microphone capture, audio encoding and speaker playback
+
+Floodgate provides Bedrock identity and forms; it does not provide microphone capture.
+
+The gateway protocol is designed so a Java client mod and a compatible Bedrock companion client can share the same voice backend without FFmpeg or glibc.
+
+## Build
+
+GitHub Actions builds the plugin with Java 25 and uploads the generated JAR as a workflow artifact.
+
+For a fixed Paper build, replace 26.2.build.+ with a stable build such as 26.2.build.112-stable.
+
+## Hosting notes
+
+Do not place the voice gateway on the same UDP port used by Geyser. The voice gateway in this project uses TCP 26467.
+
+If the hosting provider only exposes TCP and does not provide an additional TCP port, use the assigned secondary TCP port in config.yml.
+
+If the provider blocks custom inbound ports entirely, the gateway cannot accept direct client connections from the Internet.
+
+## No-emoji rule
+
+Plugin UI, config, permissions and protocol messages intentionally avoid emoji characters.
