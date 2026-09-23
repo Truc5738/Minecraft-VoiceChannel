@@ -1,5 +1,6 @@
 package dev.truc5738.voicechannel;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -70,6 +71,25 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!(sender instanceof Player player) || !player.hasPermission("voicechannel.use")) {
+            return Collections.emptyList();
+        }
+        if (args.length == 1) {
+            List<String> values = List.of("join", "private", "privatejoin", "leave", "mic", "output");
+            List<String> result = new ArrayList<>();
+            for (String value : values) {
+                if (value.startsWith(args[0].toLowerCase())) result.add(value);
+            }
+            return result;
+        }
+        if (args.length == 2 && (args[0].equalsIgnoreCase("join")
+                || args[0].equalsIgnoreCase("privatejoin"))) {
+            List<String> result = new ArrayList<>();
+            for (String channel : manager.getChannels()) {
+                if (channel.toLowerCase().startsWith(args[1].toLowerCase())) result.add(channel);
+            }
+            return result;
+        }
         return Collections.emptyList();
     }
 }
