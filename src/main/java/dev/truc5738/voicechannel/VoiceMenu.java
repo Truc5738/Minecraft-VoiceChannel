@@ -1,15 +1,15 @@
 package dev.truc5738.voicechannel;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -28,17 +28,12 @@ public final class VoiceMenu implements Listener {
     }
 
     public void open(Player player) {
-        if (isBedrock(player)) {
-            openBedrock(player);
-        } else {
-            openJava(player);
-        }
+        if (isBedrock(player)) openBedrock(player);
+        else openJava(player);
     }
 
     private boolean isBedrock(Player player) {
-        if (Bukkit.getPluginManager().getPlugin("floodgate") == null) {
-            return false;
-        }
+        if (Bukkit.getPluginManager().getPlugin("floodgate") == null) return false;
         try {
             return FloodgateApi.getInstance().isFloodgatePlayer(player.getUniqueId());
         } catch (Throwable ignored) {
@@ -53,11 +48,11 @@ public final class VoiceMenu implements Listener {
         set(inventory, 10, "Microphone", manager.isMicMuted(player) ? "Muted" : "Active");
         set(inventory, 11, "Voice Output", manager.isOutputMuted(player) ? "Muted" : "Active");
         set(inventory, 12, "Channel", manager.getChannel(player));
-        set(inventory, 13, "Speaking Players", Integer.toString(countSpeaking(player)));
+        set(inventory, 13, "Speaking Players", Integer.toString(manager.countSpeaking(player)));
         set(inventory, 14, "Voice Range", format(manager.getRange(player)));
         set(inventory, 15, "Volume", format(manager.getVolume(player)));
         set(inventory, 16, "Player Mute", "Open player list");
-        set(inventory, 21, "Private Channel", "Not configured");
+        set(inventory, 21, "Private Channel", "Create or join private channel");
         set(inventory, 22, "Channel Moderation", "Admin controls");
         set(inventory, 23, "Voice Settings", "Open settings");
         set(inventory, 26, "Close", "Close this menu");
@@ -103,7 +98,7 @@ public final class VoiceMenu implements Listener {
                 + "Voice output: " + (manager.isOutputMuted(player) ? "Muted" : "Active") + "\n"
                 + "Range: " + format(manager.getRange(player)) + "\n"
                 + "Volume: " + format(manager.getVolume(player)) + "\n"
-                + "Speaking players: " + countSpeaking(player);
+                + "Speaking players: " + manager.countSpeaking(player);
     }
 
     @EventHandler
@@ -130,19 +125,16 @@ public final class VoiceMenu implements Listener {
         openJava(player);
     }
 
-    private int countSpeaking(Player viewer) {
-        int count = 0;
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (manager.canHear(viewer, player) && !manager.isMicMuted(player)) count++;
-        }
-        return count;
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        manager.remove(event.getPlayer());
     }
 
     private void set(Inventory inventory, int slot, String name, String lore) {
         ItemStack item = new ItemStack(Material.PAPER);
         ItemMeta meta = item.getItemMeta();
-        meta.displayName(org.bukkit.ChatColor.WHITE + name);
-        meta.lore(List.of(org.bukkit.ChatColor.GRAY + lore));
+        meta.displayName(ChatColor.WHITE + name);
+        meta.lore(List.of(ChatColor.GRAY + lore));
         item.setItemMeta(meta);
         inventory.setItem(slot, item);
     }
