@@ -17,7 +17,7 @@ public final class VoiceChannelPlugin extends JavaPlugin {
 
         voiceMenu = new VoiceMenu(this, voiceManager);
 
-        VoiceCommand command = new VoiceCommand(voiceMenu);
+        VoiceCommand command = new VoiceCommand(voiceMenu, voiceManager);
         if (getCommand("voicechannel") != null) {
             getCommand("voicechannel").setExecutor(command);
             getCommand("voicechannel").setTabCompleter(command);
