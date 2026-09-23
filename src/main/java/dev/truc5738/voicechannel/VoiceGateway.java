@@ -153,8 +153,10 @@ public final class VoiceGateway {
             if (running) plugin.getLogger().fine("Voice client disconnected: " + exception.getMessage());
         } finally {
             if (session.uuid != null) {
-                sessions.remove(session.uuid, session);
-                manager.setConnected(session.uuid, false);
+                boolean removed = sessions.remove(session.uuid, session);
+                if (removed) {
+                    manager.setConnected(session.uuid, false);
+                }
             }
         }
     }
