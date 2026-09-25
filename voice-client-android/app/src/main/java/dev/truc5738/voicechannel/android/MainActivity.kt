@@ -67,6 +67,9 @@ class MainActivity : Activity() {
                             break
                         }
                         val s = Socket(hostValue, portValue)
+                        s.tcpNoDelay = true
+                        s.keepAlive = true
+                        s.soTimeout = 35000
                         socket = s
                         running = true
                         val credential = sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pair.text.toString()
