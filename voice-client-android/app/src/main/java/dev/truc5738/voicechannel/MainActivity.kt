@@ -150,6 +150,9 @@ class MainActivity : Activity() {
         ackText.lineSequence().firstOrNull { it.startsWith("SESSION:") }?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
             sessionToken = it
             getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
+            if (token.startsWith("PAIR:")) {
+                runOnUiThread { pair.setText("") }
+            }
         }
         id = UUID(assignedMsb, assignedLsb)
         runOnUiThread { statusView?.text = "Connected" }
