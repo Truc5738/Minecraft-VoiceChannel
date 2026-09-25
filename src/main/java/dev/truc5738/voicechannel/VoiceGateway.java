@@ -174,7 +174,7 @@ public final class VoiceGateway {
         if (session.input.readInt() != MAGIC) return false;
         if (session.input.readByte() != HELLO) return false;
 
-        UUID uuid = readUuid(session.input);
+        UUID presentedUuid = readUuid(session.input);
         int sequence = session.input.readInt();
         int length = session.input.readInt();
         if (sequence != 0 || length <= 0 || length > 1024) return false;
@@ -186,12 +186,16 @@ public final class VoiceGateway {
         boolean validToken = MessageDigest.isEqual(
                 credential.getBytes(StandardCharsets.UTF_8),
                 token.getBytes(StandardCharsets.UTF_8));
+        UUID uuid = presentedUuid;
         boolean validPair = false;
         if (credential.startsWith("PAIR:")) {
             String code = credential.substring(5);
             Pairing pairing = pairings.get(code);
-            if (pairing != null && pairing.uuid.equals(uuid) && pairing.expiresAt >= System.currentTimeMillis()) {
+            boolean uuidOmitted = presentedUuid.getMostSignificantBits() == 0L && presentedUuid.getLeastSignificantBits() == 0L;
+            if (pairing != null && pairing.expiresAt >= System.currentTimeMillis()
+                    && (uuidOmitted || pairing.uuid.equals(presentedUuid))) {
                 validPair = pairings.remove(code, pairing);
+                if (validPair) uuid = pairing.uuid;
             }
         }
         if (!validToken && !validPair) return false;
