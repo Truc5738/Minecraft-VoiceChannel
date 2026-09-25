@@ -87,6 +87,12 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
                 VoiceChannelPlugin vp = (VoiceChannelPlugin) player.getServer().getPluginManager().getPlugin("Minecraft-VoiceChannel");
                 int port = vp != null ? vp.getConfig().getInt("voice.gateway.port", 26467) : 26467;
                 player.sendMessage("Gateway port: " + port);
+                if (vp != null && vp.getVoiceGateway() != null) {
+                    VoiceGateway gateway = vp.getVoiceGateway();
+                    player.sendMessage("Gateway listener: " + (gateway.isRunning() ? "Online" : "Offline"));
+                    player.sendMessage("Gateway bind: " + gateway.getBindHost() + ":" + gateway.getPort());
+                    player.sendMessage("Active voice sessions: " + gateway.getConnectedClients());
+                }
             }
             default -> menu.open(player);
         }
