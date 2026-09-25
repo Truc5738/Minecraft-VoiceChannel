@@ -232,6 +232,10 @@ public final class VoiceGateway {
         }
     }
 
+    private static boolean isZeroUuid(UUID uuid) {
+        return uuid.getMostSignificantBits() == 0L && uuid.getLeastSignificantBits() == 0L;
+    }
+
     private static UUID readUuid(DataInputStream input) throws IOException {
         return new UUID(input.readLong(), input.readLong());
     }
