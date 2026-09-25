@@ -11,6 +11,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import android.content.Context
+import android.content.pm.PackageManager
 
 class MainActivity : Activity() {
     private var socket: Socket? = null
@@ -40,7 +41,9 @@ class MainActivity : Activity() {
             addView(status); addView(button); addView(stop)
         }
         setContentView(layout)
-        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 100)
+        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 100)
+        }
         sessionToken = getPreferences(Context.MODE_PRIVATE).getString("session_token", null)
 
         button.setOnClickListener {
@@ -51,7 +54,19 @@ class MainActivity : Activity() {
                 var firstConnection = true
                 while (wantConnection) {
                     try {
-                        val s = Socket(host.text.toString(), port.text.toString().toInt())
+                        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            runOnUiThread { statusView?.text = "Microphone permission required" }
+                            wantConnection = false
+                            break
+                        }
+                        val hostValue = host.text.toString().trim()
+                        val portValue = port.text.toString().trim().toIntOrNull() ?: 26467
+                        if (hostValue.isBlank()) {
+                            runOnUiThread { statusView?.text = "Enter gateway host" }
+                            wantConnection = false
+                            break
+                        }
+                        val s = Socket(hostValue, portValue)
                         socket = s
                         running = true
                         val credential = sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pair.text.toString()
@@ -70,6 +85,8 @@ class MainActivity : Activity() {
                         if (!wantConnection) break
                     } catch (ex: Exception) {
                         running = false
+                        try { socket?.close() } catch (_: Exception) {}
+                        socket = null
                         if (wantConnection) runOnUiThread { statusView?.text = "Disconnected - retrying" }
                     }
                     if (wantConnection) {
@@ -119,10 +136,11 @@ class MainActivity : Activity() {
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT, maxOf(min, frameBytes * 4))
+        val trackMin = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setBufferSizeInBytes(maxOf(min, frameBytes * 4)).build()
+            .setBufferSizeInBytes(maxOf(trackMin, frameBytes * 4)).build()
 
         Thread {
             try {
