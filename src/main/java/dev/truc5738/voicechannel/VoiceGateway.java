@@ -160,13 +160,13 @@ public final class VoiceGateway {
         for (Session session : new ArrayList<>(sessions.values())) {
             if (session.uuid == null) continue;
             if (now - session.lastPongAt > 15_000L) {
-                session.close();
+                removeSession(session);
                 continue;
             }
             try {
                 session.send(PING, session.uuid, session.heartbeatSequence++, new byte[0]);
             } catch (IOException exception) {
-                session.close();
+                removeSession(session);
             }
         }
     }
