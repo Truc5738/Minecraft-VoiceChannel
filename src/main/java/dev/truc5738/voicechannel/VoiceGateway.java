@@ -111,7 +111,10 @@ public final class VoiceGateway {
     }
 
     public String createPairCode(UUID uuid) {
-        String code = String.format(java.util.Locale.ROOT, "%06d", new SecureRandom().nextInt(1_000_000));
+        String code;
+        do {
+            code = String.format(java.util.Locale.ROOT, "%06d", random.nextInt(1_000_000));
+        } while (pairings.containsKey(code));
         pairings.entrySet().removeIf(e -> e.getValue().expiresAt < System.currentTimeMillis() || e.getValue().uuid.equals(uuid));
         pairings.put(code, new Pairing(uuid, System.currentTimeMillis() + 120_000L));
         return code;
@@ -135,7 +138,10 @@ public final class VoiceGateway {
 
     public void disconnect(UUID uuid) {
         Session session = sessions.remove(uuid);
-        if (session != null) session.close();
+        if (session != null) {
+            session.close();
+            if (!sessions.containsKey(uuid)) manager.setConnected(uuid, false);
+        }
     }
 
     private void heartbeat() {
@@ -271,6 +277,7 @@ public final class VoiceGateway {
     }
 
     private void handleAudio(Session session, int sequence, byte[] payload) {
+        if (sessions.get(session.uuid) != session) return;
         if (!manager.isConnected(session.uuid) || manager.isMicMuted(session.uuid)) return;
 
         manager.markSpeaking(session.uuid);
