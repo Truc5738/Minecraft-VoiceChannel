@@ -9,6 +9,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.geysermc.floodgate.api.FloodgateApi;
 
 public final class VoiceCommand implements CommandExecutor, TabCompleter {
     private final VoiceMenu menu;
@@ -64,6 +65,16 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
             case "leave" -> manager.joinDefaultChannel(player);
             case "mic" -> player.sendMessage("Microphone: " + (manager.toggleMic(player) ? "Muted" : "Active"));
             case "output" -> player.sendMessage("Voice output: " + (manager.toggleOutput(player) ? "Muted" : "Active"));
+            case "status" -> {
+                boolean bedrock = false;
+                try {
+                    bedrock = FloodgateApi.getInstance().isFloodgatePlayer(player.getUniqueId());
+                } catch (Throwable ignored) {
+                }
+                player.sendMessage("Voice status: " + (manager.isConnected(player.getUniqueId()) ? "Connected" : "Disconnected"));
+                player.sendMessage("Platform: " + (bedrock ? "Bedrock" : "Java"));
+                player.sendMessage("Gateway port: " + pluginPort(player));
+            }
             default -> menu.open(player);
         }
         return true;
@@ -75,7 +86,7 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
             return Collections.emptyList();
         }
         if (args.length == 1) {
-            List<String> values = List.of("join", "private", "privatejoin", "leave", "mic", "output");
+            List<String> values = List.of("join", "private", "privatejoin", "leave", "mic", "output", "status");
             List<String> result = new ArrayList<>();
             for (String value : values) {
                 if (value.startsWith(args[0].toLowerCase())) result.add(value);
