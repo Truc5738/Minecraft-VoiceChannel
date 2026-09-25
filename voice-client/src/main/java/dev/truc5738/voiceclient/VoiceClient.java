@@ -53,7 +53,7 @@ public final class VoiceClient {
             mic.start();
             speaker.start();
 
-            Thread receiver = new Thread(() -> receive(socket, in, out, voiceUuid, speaker), "VoiceClient-Receiver");
+            final DataInputStream voiceIn = in;\n            final DataOutputStream voiceOut = out;\n            Thread receiver = new Thread(() -> receive(socket, voiceIn, voiceOut, voiceUuid, speaker), "VoiceClient-Receiver");
             receiver.setDaemon(true);
             receiver.start();
 
@@ -70,7 +70,7 @@ public final class VoiceClient {
                             offset += n;
                         }
                         if (offset == frame.length) {
-                            send(out, AUDIO, voiceUuid, sequence++, frame);
+                            send(voiceOut, AUDIO, voiceUuid, sequence++, frame);
                         }
                     }
                 } catch (IOException ignored) {
