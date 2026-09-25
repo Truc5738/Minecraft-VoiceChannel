@@ -1,6 +1,9 @@
 package dev.truc5738.voicechannel;
 
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 public final class VoiceChannelPlugin extends JavaPlugin {
     private VoiceManager voiceManager;
@@ -24,6 +27,13 @@ public final class VoiceChannelPlugin extends JavaPlugin {
         }
 
         getServer().getPluginManager().registerEvents(voiceMenu, this);
+        getServer().getPluginManager().registerEvents(new Listener() {
+            @EventHandler
+            public void onPlayerQuit(PlayerQuitEvent event) {
+                if (voiceGateway != null) voiceGateway.disconnect(event.getPlayer().getUniqueId());
+                if (voiceManager != null) voiceManager.remove(event.getPlayer());
+            }
+        }, this);
         getLogger().info("Minecraft-VoiceChannel enabled.");
     }
 
