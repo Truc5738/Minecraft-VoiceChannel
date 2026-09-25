@@ -12,4 +12,11 @@ android {
         versionCode=1
         versionName="1.0.0"
     }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_24
+        targetCompatibility = JavaVersion.VERSION_24
+    }
+}
+kotlin {
+    jvmToolchain(24)
 }
