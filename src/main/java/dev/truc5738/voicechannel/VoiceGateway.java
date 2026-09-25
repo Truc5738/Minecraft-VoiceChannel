@@ -43,6 +43,8 @@ public final class VoiceGateway {
     private Thread acceptThread;
     private String token;
     private final Map<String, Pairing> pairings = new ConcurrentHashMap<>();
+    private final Map<String, SessionCredential> credentials = new ConcurrentHashMap<>();
+    private final SecureRandom random = new SecureRandom();
 
     public VoiceGateway(JavaPlugin plugin, VoiceManager manager) {
         this.plugin = plugin;
@@ -93,6 +95,7 @@ public final class VoiceGateway {
         for (Session session : new ArrayList<>(sessions.values())) session.close();
         sessions.clear();
         pairings.clear();
+        credentials.clear();
         workers.shutdownNow();
     }
 
@@ -198,7 +201,18 @@ public final class VoiceGateway {
                 if (validPair) uuid = pairing.uuid;
             }
         }
-        if (!validToken && !validPair) return false;
+        boolean validSession = false;
+        if (credential.startsWith("SESSION:")) {
+            String sessionToken = credential.substring("SESSION:".length());
+            SessionCredential stored = credentials.get(sessionToken);
+            if (stored != null && stored.expiresAt >= System.currentTimeMillis()) {
+                uuid = stored.uuid;
+                validSession = true;
+            } else if (stored != null) {
+                credentials.remove(sessionToken, stored);
+            }
+        }
+        if (!validToken && !validPair && !validSession) return false;
 
         Player player = plugin.getServer().getPlayer(uuid);
         if (player == null || !player.isOnline()) return false;
@@ -208,7 +222,8 @@ public final class VoiceGateway {
 
         session.uuid = uuid;
         manager.setConnected(uuid, true);
-        session.send(HELLO, uuid, 0, "OK".getBytes(StandardCharsets.UTF_8));
+        String sessionToken = findOrCreateSessionToken(uuid);
+        session.send(HELLO, uuid, 0, ("OK\nSESSION:" + sessionToken).getBytes(StandardCharsets.UTF_8));
         return true;
     }
 
@@ -241,10 +256,35 @@ public final class VoiceGateway {
         return new UUID(input.readLong(), input.readLong());
     }
 
+    private String findOrCreateSessionToken(UUID uuid) {
+        long now = System.currentTimeMillis();
+        credentials.entrySet().removeIf(e -> e.getValue().expiresAt < now);
+        for (Map.Entry<String, SessionCredential> entry : credentials.entrySet()) {
+            if (entry.getValue().uuid.equals(uuid)) {
+                entry.getValue().expiresAt = now + 86_400_000L;
+                return entry.getKey();
+            }
+        }
+        byte[] bytes = new byte[32];
+        random.nextBytes(bytes);
+        String value = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        credentials.put(value, new SessionCredential(uuid, now + 86_400_000L));
+        return value;
+    }
+
     private static String generateToken() {
         byte[] bytes = new byte[32];
         new SecureRandom().nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static final class SessionCredential {
+        private final UUID uuid;
+        private volatile long expiresAt;
+        private SessionCredential(UUID uuid, long expiresAt) {
+            this.uuid = uuid;
+            this.expiresAt = expiresAt;
+        }
     }
 
     private static final class Pairing {
