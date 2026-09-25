@@ -56,7 +56,6 @@ class MainActivity : Activity() {
                         val credential = sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pair.text.toString()
                         try {
                             runVoice(s, credential)
-                            runOnUiThread { status.text = "Connected" }
                         } catch (ex: Exception) {
                             if (sessionToken != null && ex.message == "SESSION_REJECTED") {
                                 sessionToken = null
@@ -114,6 +113,7 @@ class MainActivity : Activity() {
             getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
         }
         id = UUID(assignedMsb, assignedLsb)
+        runOnUiThread { status.text = "Connected" }
 
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
