@@ -16,13 +16,22 @@ public final class VoiceClient {
 
     public static void main(String[] args) throws Exception {
         if (args.length != 4) {
-            System.out.println("Usage: java -jar voice-client.jar <host> <port> <uuid> <token>");
+            System.out.println("Usage:");
+            System.out.println("  java -jar voice-client.jar <host> <port> <uuid> <token>");
+            System.out.println("  java -jar voice-client.jar <host> <port> pair <6-digit-code>");
             return;
         }
         String host = args[0];
         int port = Integer.parseInt(args[1]);
-        UUID uuid = UUID.fromString(args[2]);
-        String token = args[3];
+        UUID uuid;
+        String token;
+        if (args[2].equalsIgnoreCase("pair")) {
+            uuid = new UUID(0L, 0L);
+            token = "PAIR:" + args[3];
+        } else {
+            uuid = UUID.fromString(args[2]);
+            token = args[3];
+        }
 
         AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
         try (Socket socket = new Socket(host, port);
@@ -33,6 +42,9 @@ public final class VoiceClient {
 
             socket.setTcpNoDelay(true);
             send(out, HELLO, uuid, 0, token.getBytes(StandardCharsets.UTF_8));
+            if (!readHelloAck(in, uuid)) {
+                throw new IOException("Voice gateway authentication rejected.");
+            }
             mic.open(format);
             speaker.open(format);
             mic.start();
@@ -78,6 +90,18 @@ public final class VoiceClient {
         out.writeInt(payload.length);
         out.write(payload);
         out.flush();
+    }
+
+    private static boolean readHelloAck(DataInputStream in, UUID self) throws IOException {
+        if (in.readInt() != MAGIC) return false;
+        if (in.readByte() != HELLO) return false;
+        UUID assigned = new UUID(in.readLong(), in.readLong());
+        in.readInt();
+        int length = in.readInt();
+        if (length <= 0 || length > 1024) return false;
+        byte[] payload = in.readNBytes(length);
+        return payload.length == length && new String(payload, StandardCharsets.UTF_8).startsWith("OK")
+                && (self.getMostSignificantBits() == 0L || assigned.equals(self));
     }
 
     private static void receive(DataInputStream in, DataOutputStream out, UUID self, SourceDataLine speaker) {
