@@ -17,7 +17,7 @@ public record VoiceRoute(
 ) {
     public boolean canHear(VoiceRoute speaker) {
         if (uuid.equals(speaker.uuid())) return true;
-        if (outputMuted || micMuted) return false;
+        if (outputMuted) return false;
         if (!channel.equals(speaker.channel())) return false;
         if (!worldId.equals(speaker.worldId())) return false;
         if (mutedPlayers.contains(speaker.uuid())) return false;
