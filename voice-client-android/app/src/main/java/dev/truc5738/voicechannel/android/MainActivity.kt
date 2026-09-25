@@ -78,6 +78,9 @@ class MainActivity : Activity() {
                                 getPreferences(Context.MODE_PRIVATE).edit().remove("session_token").apply()
                                 runOnUiThread { statusView?.text = "Session expired - enter pair code" }
                                 wantConnection = false
+                            } else if (ex.message == "Pairing rejected") {
+                                runOnUiThread { statusView?.text = "Pairing rejected - enter a new code" }
+                                wantConnection = false
                             } else {
                                 throw ex
                             }
