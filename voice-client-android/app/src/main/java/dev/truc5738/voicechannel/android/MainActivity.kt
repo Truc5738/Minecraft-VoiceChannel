@@ -70,15 +70,15 @@ class MainActivity : Activity() {
             try {
                 track.play()
                 while (running) {
-                    val header = ByteArray(17)
+                    val header = ByteArray(29)
                     readFully(input, header)
                     val hb = ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN)
                     if (hb.int != magic) break
                     val type = hb.get()
                     val msb = hb.long
                     val lsb = hb.long
-                    val seq = input.readInt()
-                    val len = input.readInt()
+                    val seq = hb.int
+                    val len = hb.int
                     if (len < 0 || len > 16384) break
                     val data = ByteArray(len)
                     readFully(input, data)
