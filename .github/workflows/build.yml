@@ -27,8 +27,17 @@ jobs:
       - name: Build plugin
         run: gradle build --no-daemon
 
+      - name: Build voice client
+        run: gradle :voice-client:build --no-daemon
+
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
         with:
           name: Minecraft-VoiceChannel
           path: build/libs/*.jar
+
+      - name: Upload Java voice client
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minecraft-VoiceChannel-VoiceClient
+          path: voice-client/build/libs/*.jar
