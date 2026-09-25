@@ -59,6 +59,7 @@ public final class VoiceMenu implements Listener {
         set(inventory, 21, "Private Channel", "Create or join private channel");
         set(inventory, 22, "Channel Moderation", "Admin controls");
         set(inventory, 23, "Voice Settings", "Open settings");
+        set(inventory, 24, "Pair Device", "Generate a Bedrock/voice client pairing code");
         set(inventory, 26, "Close", "Close this menu");
 
         player.openInventory(inventory);
@@ -76,7 +77,8 @@ public final class VoiceMenu implements Listener {
                 .button("Player Mute")
                 .button("Private Channel")
                 .button("Channel Moderation")
-                .button("Voice Settings")
+                 .button("Voice Settings")
+                .button("Pair Device")
                 .button("Close");
 
         form.validResultHandler(result -> handleBedrockResult(player, result.clickedButtonId()));
@@ -108,6 +110,10 @@ public final class VoiceMenu implements Listener {
             case 8 -> {
                 player.sendMessage(ChatColor.GRAY + "Voice settings: range " + format(manager.getRange(player))
                         + ", volume " + format(manager.getVolume(player)) + ".");
+                return;
+            }
+            case 9 -> {
+                sendPairCode(player);
                 return;
             }
             default -> {
@@ -289,6 +295,10 @@ public final class VoiceMenu implements Listener {
                         + ", output " + (manager.isOutputMuted(player) ? "muted" : "active") + ".");
                 return;
             }
+            case 24 -> {
+                sendPairCode(player);
+                return;
+            }
             case 26 -> {
                 player.closeInventory();
                 return;
@@ -413,6 +423,18 @@ public final class VoiceMenu implements Listener {
             voicePlugin.getVoiceGateway().disconnect(event.getPlayer().getUniqueId());
         }
         manager.remove(event.getPlayer());
+    }
+
+
+    private void sendPairCode(Player player) {
+        if (plugin instanceof VoiceChannelPlugin vp && vp.getVoiceGateway() != null && vp.getVoiceGateway().isRunning()) {
+            String code = vp.getVoiceGateway().createPairCode(player.getUniqueId());
+            int port = vp.getConfig().getInt("voice.gateway.port", 26467);
+            player.sendMessage(ChatColor.GREEN + "Pairing code: " + code);
+            player.sendMessage(ChatColor.GRAY + "Expires in 120 seconds. Gateway port: " + port + ".");
+        } else {
+            player.sendMessage(ChatColor.RED + "Voice gateway is unavailable.");
+        }
     }
 
     private void set(Inventory inventory, int slot, String name, String lore) {
