@@ -36,6 +36,15 @@ jobs:
           name: Minecraft-VoiceChannel
           path: build/libs/*.jar
 
+      - name: Build Android Bedrock voice client
+        run: gradle -p voice-client-android :app:assembleDebug --no-daemon
+
+      - name: Upload Android Bedrock voice client
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minecraft-VoiceChannel-Bedrock-Android
+          path: voice-client-android/app/build/outputs/apk/debug/*.apk
+
       - name: Upload Java voice client
         uses: actions/upload-artifact@v4
         with:
