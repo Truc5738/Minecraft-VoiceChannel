@@ -21,6 +21,8 @@ class MainActivity : Activity() {
     private val sampleRate = 16000
     private val frameBytes = sampleRate / 50 * 2
     private val magic = 0x4D564331
+    private val pingType = 4
+    private val pongType = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,11 +126,24 @@ class MainActivity : Activity() {
                     val data = ByteArray(len)
                     readFully(input, data)
                     if (type.toInt() == 2 && UUID(msb, lsb) != id) track.write(data, 0, data.size)
+                    if (type.toInt() == pongType) continue
                 }
             } catch (_: Exception) {}
             track.stop()
             track.release()
         }.start()
+
+        Thread {
+            var pingSeq = 0
+            while (running) {
+                try {
+                    Thread.sleep(10_000L)
+                    if (running) send(output, pingType, id, pingSeq++, ByteArray(0))
+                } catch (_: Exception) {
+                    break
+                }
+            }
+        }.also { it.isDaemon = true; it.start() }
 
         recorder.startRecording()
         val frame = ByteArray(frameBytes)
