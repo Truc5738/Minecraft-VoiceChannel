@@ -10,12 +10,14 @@ import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
+import android.content.Context
 
 class MainActivity : Activity() {
     private var socket: Socket? = null
     private var running = false
     private var wantConnection = false
     private var connectionThread: Thread? = null
+    private var sessionToken: String? = null
     private val sampleRate = 16000
     private val frameBytes = sampleRate / 50 * 2
     private val magic = 0x4D564331
@@ -36,6 +38,7 @@ class MainActivity : Activity() {
         }
         setContentView(layout)
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 100)
+        sessionToken = getPreferences(Context.MODE_PRIVATE).getString("session_token", null)
 
         button.setOnClickListener {
             if (wantConnection) return@setOnClickListener
@@ -49,7 +52,8 @@ class MainActivity : Activity() {
                         socket = s
                         running = true
                         runOnUiThread { status.text = "Connected" }
-                        runVoice(s, "PAIR:" + pair.text.toString())
+                        val credential = sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pair.text.toString()
+                        runVoice(s, credential)
                         if (!wantConnection) break
                     } catch (ex: Exception) {
                         running = false
@@ -87,7 +91,12 @@ class MainActivity : Activity() {
         if (ackLength <= 0 || ackLength > 64) throw IOException("Invalid gateway response")
         val ackPayload = ByteArray(ackLength)
         readFully(input, ackPayload)
-        if (String(ackPayload, Charsets.UTF_8) != "OK") throw IOException("Pairing rejected")
+        val ackText = String(ackPayload, Charsets.UTF_8)
+        if (!ackText.startsWith("OK")) throw IOException("Pairing rejected")
+        ackText.lineSequence().firstOrNull { it.startsWith("SESSION:") }?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
+            sessionToken = it
+            getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
+        }
         id = UUID(assignedMsb, assignedLsb)
 
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
