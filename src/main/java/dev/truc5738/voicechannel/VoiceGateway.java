@@ -21,6 +21,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public final class VoiceGateway {
     private static final int MAX_FRAME_SIZE = 16 * 1024;
@@ -36,6 +38,11 @@ public final class VoiceGateway {
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
         Thread thread = new Thread(r, "Minecraft-VoiceChannel-Gateway");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "Minecraft-VoiceChannel-Heartbeat");
         thread.setDaemon(true);
         return thread;
     });
@@ -80,6 +87,7 @@ public final class VoiceGateway {
         acceptThread = new Thread(this::acceptLoop, "Minecraft-VoiceChannel-Acceptor");
         acceptThread.setDaemon(true);
         acceptThread.start();
+        heartbeat.scheduleAtFixedRate(this::heartbeat, 5, 5, TimeUnit.SECONDS);
 
         plugin.getLogger().info("Voice gateway listening on TCP " + host + ":" + port + ".");
         plugin.getLogger().info("Gateway uses JVM networking only; no FFmpeg, JAVE2, glibc or native Linux binary is required.");
@@ -99,6 +107,7 @@ public final class VoiceGateway {
         pairings.clear();
         credentials.clear();
         workers.shutdownNow();
+        heartbeat.shutdownNow();
     }
 
     public String createPairCode(UUID uuid) {
@@ -115,6 +124,23 @@ public final class VoiceGateway {
     public void disconnect(UUID uuid) {
         Session session = sessions.remove(uuid);
         if (session != null) session.close();
+    }
+
+    private void heartbeat() {
+        if (!running) return;
+        long now = System.currentTimeMillis();
+        for (Session session : new ArrayList<>(sessions.values())) {
+            if (session.uuid == null) continue;
+            if (now - session.lastPongAt > 15_000L) {
+                session.close();
+                continue;
+            }
+            try {
+                session.send(PING, session.uuid, session.heartbeatSequence++, new byte[0]);
+            } catch (IOException exception) {
+                session.close();
+            }
+        }
     }
 
     private void acceptLoop() {
@@ -157,8 +183,8 @@ public final class VoiceGateway {
 
                 if (type == AUDIO) {
                     handleAudio(session, sequence, payload);
-                } else if (type == PING) {
-                    session.send(PONG, session.uuid, sequence, new byte[0]);
+                } else if (type == PONG) {
+                    session.lastPongAt = System.currentTimeMillis();
                 } else if (type == GOODBYE) {
                     return;
                 } else {
@@ -303,6 +329,8 @@ public final class VoiceGateway {
         private DataInputStream input;
         private DataOutputStream output;
         private UUID uuid;
+        private volatile long lastPongAt = System.currentTimeMillis();
+        private int heartbeatSequence;
 
         private Session(Socket socket) {
             this.socket = socket;
