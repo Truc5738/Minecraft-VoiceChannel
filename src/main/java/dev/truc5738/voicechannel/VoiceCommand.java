@@ -65,6 +65,17 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
             case "leave" -> manager.joinDefaultChannel(player);
             case "mic" -> player.sendMessage("Microphone: " + (manager.toggleMic(player) ? "Muted" : "Active"));
             case "output" -> player.sendMessage("Voice output: " + (manager.toggleOutput(player) ? "Muted" : "Active"));
+            case "pair" -> {
+                VoiceChannelPlugin vp = (VoiceChannelPlugin) player.getServer().getPluginManager().getPlugin("Minecraft-VoiceChannel");
+                if (vp == null || vp.getVoiceGateway() == null) {
+                    player.sendMessage("Voice gateway is unavailable.");
+                } else {
+                    String code = vp.getVoiceGateway().createPairCode(player.getUniqueId());
+                    int port = vp.getConfig().getInt("voice.gateway.port", 26467);
+                    player.sendMessage("Bedrock pairing code: " + code);
+                    player.sendMessage("Code expires in 120 seconds. Gateway port: " + port);
+                }
+            }
             case "status" -> {
                 boolean bedrock = false;
                 try {
@@ -86,7 +97,7 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
             return Collections.emptyList();
         }
         if (args.length == 1) {
-            List<String> values = List.of("join", "private", "privatejoin", "leave", "mic", "output", "status");
+            List<String> values = List.of("join", "private", "privatejoin", "leave", "mic", "output", "pair", "status");
             List<String> result = new ArrayList<>();
             for (String value : values) {
                 if (value.startsWith(args[0].toLowerCase())) result.add(value);
