@@ -28,6 +28,8 @@ public final class VoiceGateway {
     private static final byte HELLO = 1;
     private static final byte AUDIO = 2;
     private static final byte GOODBYE = 3;
+    private static final byte PING = 4;
+    private static final byte PONG = 5;
 
     private final JavaPlugin plugin;
     private final VoiceManager manager;
@@ -121,6 +123,7 @@ public final class VoiceGateway {
                 Socket socket = serverSocket.accept();
                 socket.setTcpNoDelay(true);
                 socket.setKeepAlive(true);
+                socket.setSoTimeout(35_000);
                 workers.submit(() -> handle(socket));
             } catch (SocketException exception) {
                 if (running) plugin.getLogger().warning("Voice gateway accept error: " + exception.getMessage());
@@ -154,6 +157,8 @@ public final class VoiceGateway {
 
                 if (type == AUDIO) {
                     handleAudio(session, sequence, payload);
+                } else if (type == PING) {
+                    session.send(PONG, session.uuid, sequence, new byte[0]);
                 } else if (type == GOODBYE) {
                     return;
                 } else {
