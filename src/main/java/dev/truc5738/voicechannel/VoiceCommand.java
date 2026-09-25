@@ -84,7 +84,9 @@ public final class VoiceCommand implements CommandExecutor, TabCompleter {
                 }
                 player.sendMessage("Voice status: " + (manager.isConnected(player.getUniqueId()) ? "Connected" : "Disconnected"));
                 player.sendMessage("Platform: " + (bedrock ? "Bedrock" : "Java"));
-                player.sendMessage("Gateway port: " + pluginPort(player));
+                VoiceChannelPlugin vp = (VoiceChannelPlugin) player.getServer().getPluginManager().getPlugin("Minecraft-VoiceChannel");
+                int port = vp != null ? vp.getConfig().getInt("voice.gateway.port", 26467) : 26467;
+                player.sendMessage("Gateway port: " + port);
             }
             default -> menu.open(player);
         }
