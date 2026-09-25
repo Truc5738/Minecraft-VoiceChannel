@@ -121,6 +121,18 @@ public final class VoiceGateway {
         return sessions.size();
     }
 
+    public boolean isRunning() {
+        return running && serverSocket != null && !serverSocket.isClosed();
+    }
+
+    public String getBindHost() {
+        return plugin.getConfig().getString("voice.gateway.host", "0.0.0.0");
+    }
+
+    public int getPort() {
+        return plugin.getConfig().getInt("voice.gateway.port", 26467);
+    }
+
     public void disconnect(UUID uuid) {
         Session session = sessions.remove(uuid);
         if (session != null) session.close();
@@ -277,10 +289,6 @@ public final class VoiceGateway {
                 recipient.close();
             }
         }
-    }
-
-    private static boolean isZeroUuid(UUID uuid) {
-        return uuid.getMostSignificantBits() == 0L && uuid.getLeastSignificantBits() == 0L;
     }
 
     private static UUID readUuid(DataInputStream input) throws IOException {
