@@ -84,7 +84,7 @@ class MainActivity : Activity() {
                         }
 
                         try {
-                            runVoice(s, credential)
+                            runVoice(s, credential, pair)
                         } catch (ex: Exception) {
                             if (sessionToken != null && ex.message == "SESSION_REJECTED") {
                                 sessionToken = null
@@ -120,7 +120,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun runVoice(s: Socket, token: String) {
+    private fun runVoice(s: Socket, token: String, pair: EditText) {
         val input = DataInputStream(BufferedInputStream(s.getInputStream()))
         val output = DataOutputStream(BufferedOutputStream(s.getOutputStream()))
         var id = UUID(0L, 0L)
