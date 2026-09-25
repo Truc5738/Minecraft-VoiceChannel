@@ -271,10 +271,16 @@ public final class VoiceGateway {
                 credentials.remove(sessionToken, stored);
             }
         }
-        if (!validToken && !validPair && !validSession) return false;
+        if (!validToken && !validPair && !validSession) {
+            sendHelloError(session, "AUTH");
+            return false;
+        }
 
         Player player = plugin.getServer().getPlayer(uuid);
-        if (player == null || !player.isOnline()) return false;
+        if (player == null || !player.isOnline()) {
+            sendHelloError(session, "PLAYER_OFFLINE");
+            return false;
+        }
 
         Session previous = sessions.put(uuid, session);
         if (previous != null && previous != session) previous.close();
@@ -284,6 +290,14 @@ public final class VoiceGateway {
         String sessionToken = findOrCreateSessionToken(uuid);
         session.send(HELLO, uuid, 0, ("OK\nSESSION:" + sessionToken).getBytes(StandardCharsets.UTF_8));
         return true;
+    }
+
+    private void sendHelloError(Session session, String reason) {
+        try {
+            session.send(HELLO, new UUID(0L, 0L), 0,
+                    ("ERROR:" + reason).getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) {
+        }
     }
 
     private void handleAudio(Session session, int sequence, byte[] payload) {
