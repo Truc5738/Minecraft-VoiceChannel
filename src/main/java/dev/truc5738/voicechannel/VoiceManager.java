@@ -163,7 +163,11 @@ public final class VoiceManager {
     }
 
     public double getVolume(Player player) {
-        return playerVolumes.getOrDefault(player.getUniqueId(),
+        return getVolume(player.getUniqueId());
+    }
+
+    public double getVolume(UUID uuid) {
+        return playerVolumes.getOrDefault(uuid,
                 plugin.getConfig().getDouble("voice.default-volume", 1.0));
     }
 
