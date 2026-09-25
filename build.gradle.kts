@@ -13,6 +13,7 @@ repositories {
 }
 
 dependencies {
+    // Paper 26.2 build 129 is the verified API coordinate used by this project.
     compileOnly("io.papermc.paper:paper-api:26.2.build.129-stable")
     compileOnly("org.geysermc.floodgate:api:2.2.5-SNAPSHOT")
 }
