@@ -22,7 +22,6 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         val host = EditText(this).apply { hint = "Gateway host" }
         val port = EditText(this).apply { hint = "26467"; setText("26467") }
-        val uuid = EditText(this).apply { hint = "Minecraft UUID" }
         val pair = EditText(this).apply { hint = "Pair code (6 digits)" }
         val status = TextView(this).apply { text = "Disconnected" }
         val button = Button(this).apply { text = "Connect" }
@@ -30,7 +29,7 @@ class MainActivity : Activity() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32,32,32,32)
-            addView(host); addView(port); addView(uuid); addView(pair)
+            addView(host); addView(port); addView(pair)
             addView(status); addView(button); addView(stop)
         }
         setContentView(layout)
@@ -43,7 +42,7 @@ class MainActivity : Activity() {
                     val s = Socket(host.text.toString(), port.text.toString().toInt())
                     socket = s
                     running = true
-                    runVoice(s, UUID.fromString(uuid.text.toString()), "PAIR:" + pair.text.toString())
+                    runVoice(s, "PAIR:" + pair.text.toString())
                 } catch (ex: Exception) {
                     running = false
                     runOnUiThread { status.text = "Error: " + ex.message }
@@ -53,9 +52,10 @@ class MainActivity : Activity() {
         stop.setOnClickListener { running=false; try { socket?.close() } catch (_: Exception) {} }
     }
 
-    private fun runVoice(s: Socket, id: UUID, token: String) {
+    private fun runVoice(s: Socket, token: String) {
         val input = DataInputStream(BufferedInputStream(s.getInputStream()))
         val output = DataOutputStream(BufferedOutputStream(s.getOutputStream()))
+        val id = UUID(0L, 0L)
         send(output, 1, id, 0, token.toByteArray())
 
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
