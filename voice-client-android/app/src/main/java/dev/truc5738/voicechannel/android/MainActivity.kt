@@ -23,14 +23,14 @@ class MainActivity : Activity() {
         val host = EditText(this).apply { hint = "Gateway host" }
         val port = EditText(this).apply { hint = "26467"; setText("26467") }
         val uuid = EditText(this).apply { hint = "Minecraft UUID" }
-        val token = EditText(this).apply { hint = "Gateway token" }
+        val pair = EditText(this).apply { hint = "Pair code (6 digits)" }
         val status = TextView(this).apply { text = "Disconnected" }
         val button = Button(this).apply { text = "Connect" }
         val stop = Button(this).apply { text = "Stop" }
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32,32,32,32)
-            addView(host); addView(port); addView(uuid); addView(token)
+            addView(host); addView(port); addView(uuid); addView(pair)
             addView(status); addView(button); addView(stop)
         }
         setContentView(layout)
@@ -43,7 +43,7 @@ class MainActivity : Activity() {
                     val s = Socket(host.text.toString(), port.text.toString().toInt())
                     socket = s
                     running = true
-                    runVoice(s, UUID.fromString(uuid.text.toString()), token.text.toString())
+                    runVoice(s, UUID.fromString(uuid.text.toString()), "PAIR:" + pair.text.toString())
                 } catch (ex: Exception) {
                     running = false
                     runOnUiThread { status.text = "Error: " + ex.message }
