@@ -303,11 +303,27 @@ public final class VoiceGateway {
             if (listener == null || !listener.canHear(speaker)) continue;
 
             try {
-                recipient.send(AUDIO, session.uuid, sequence, payload);
+                double volume = manager.getVolume(recipient.uuid);
+                byte[] audio = applyVolume(payload, volume);
+                recipient.send(AUDIO, session.uuid, sequence, audio);
             } catch (IOException exception) {
                 removeSession(recipient);
             }
         }
+    }
+
+    private static byte[] applyVolume(byte[] pcm, double volume) {
+        if (volume == 1.0 || pcm.length < 2) return pcm;
+        byte[] adjusted = pcm.clone();
+        double gain = Math.max(0.0, Math.min(2.0, volume));
+        for (int i = 0; i + 1 < adjusted.length; i += 2) {
+            int sample = (short) ((adjusted[i] & 0xFF) | (adjusted[i + 1] << 8));
+            int scaled = (int) Math.round(sample * gain);
+            scaled = Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, scaled));
+            adjusted[i] = (byte) scaled;
+            adjusted[i + 1] = (byte) (scaled >> 8);
+        }
+        return adjusted;
     }
 
     private static UUID readUuid(DataInputStream input) throws IOException {
