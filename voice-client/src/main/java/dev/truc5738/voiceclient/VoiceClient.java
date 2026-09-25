@@ -53,7 +53,9 @@ public final class VoiceClient {
             mic.start();
             speaker.start();
 
-            final DataInputStream voiceIn = in;\n            final DataOutputStream voiceOut = out;\n            Thread receiver = new Thread(() -> receive(socket, voiceIn, voiceOut, voiceUuid, speaker), "VoiceClient-Receiver");
+            final DataInputStream voiceIn = in;
+            final DataOutputStream voiceOut = out;
+            Thread receiver = new Thread(() -> receive(socket, voiceIn, voiceOut, voiceUuid, speaker), "VoiceClient-Receiver");
             receiver.setDaemon(true);
             receiver.start();
 
