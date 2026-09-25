@@ -46,10 +46,24 @@ public final class VoiceManager {
         return Set.copyOf(channelMembers.keySet());
     }
 
+    public Set<String> getPublicChannels() {
+        Set<String> publicChannels = ConcurrentHashMap.newKeySet();
+        for (String channel : channelMembers.keySet()) {
+            if (!privateOwners.containsKey(channel)) publicChannels.add(channel);
+        }
+        return Set.copyOf(publicChannels);
+    }
+
+    public boolean isPrivateChannel(String channel) {
+        return channel != null && privateOwners.containsKey(channel.trim());
+    }
+
     public boolean joinChannel(Player player, String channel) {
         if (channel == null || channel.isBlank()) return false;
         String target = channel.trim();
-        if (!channelMembers.containsKey(target) && !privateOwners.containsKey(target)) return false;
+        if (isPrivateChannel(target)) return false;
+        if (!channelMembers.containsKey(target)) return false;
+
         String current = getChannel(player);
         channelMembers.computeIfAbsent(current, ignored -> ConcurrentHashMap.newKeySet()).remove(player.getUniqueId());
         channelMembers.computeIfAbsent(target, ignored -> ConcurrentHashMap.newKeySet()).add(player.getUniqueId());
@@ -65,12 +79,21 @@ public final class VoiceManager {
         privateOwners.put(target, owner.getUniqueId());
         privatePasswords.put(target, password);
         channelMembers.put(target, ConcurrentHashMap.newKeySet());
-        return joinChannel(owner, target);
+        return joinPrivateChannel(owner, target, password);
     }
 
     public boolean joinPrivateChannel(Player player, String name, String password) {
-        return privateOwners.containsKey(name) && java.util.Objects.equals(privatePasswords.get(name), password)
-                && joinChannel(player, name);
+        if (name == null || password == null) return false;
+        String target = name.trim();
+        if (!privateOwners.containsKey(target)) return false;
+        if (!java.util.Objects.equals(privatePasswords.get(target), password)) return false;
+
+        String current = getChannel(player);
+        channelMembers.computeIfAbsent(current, ignored -> ConcurrentHashMap.newKeySet()).remove(player.getUniqueId());
+        channelMembers.computeIfAbsent(target, ignored -> ConcurrentHashMap.newKeySet()).add(player.getUniqueId());
+        channels.put(player.getUniqueId(), target);
+        refreshRoute(player);
+        return true;
     }
 
     public Set<UUID> getChannelMembers(String channel) {
@@ -111,7 +134,10 @@ public final class VoiceManager {
 
     public void joinChannelLegacy(Player player, String channel) {
         if (channel == null || channel.isBlank()) return;
-        channels.put(player.getUniqueId(), channel.trim());
+        String target = channel.trim();
+        if (isPrivateChannel(target)) return;
+        channels.put(player.getUniqueId(), target);
+        channelMembers.computeIfAbsent(target, ignored -> ConcurrentHashMap.newKeySet()).add(player.getUniqueId());
         refreshRoute(player);
     }
 
