@@ -47,12 +47,13 @@ public final class VoiceClient {
                 throw new IOException("Voice gateway authentication rejected.");
             }
             uuid = assignedUuid;
+            final UUID voiceUuid = uuid;
             mic.open(format);
             speaker.open(format);
             mic.start();
             speaker.start();
 
-            Thread receiver = new Thread(() -> receive(in, out, uuid, speaker), "VoiceClient-Receiver");
+            Thread receiver = new Thread(() -> receive(socket, in, out, voiceUuid, speaker), "VoiceClient-Receiver");
             receiver.setDaemon(true);
             receiver.start();
 
@@ -69,7 +70,7 @@ public final class VoiceClient {
                             offset += n;
                         }
                         if (offset == frame.length) {
-                            send(out, AUDIO, uuid, sequence++, frame);
+                            send(out, AUDIO, voiceUuid, sequence++, frame);
                         }
                     }
                 } catch (IOException ignored) {
@@ -79,7 +80,7 @@ public final class VoiceClient {
             capture.start();
 
             System.in.read();
-            send(out, GOODBYE, uuid, 0, new byte[0]);
+            send(out, GOODBYE, voiceUuid, 0, new byte[0]);
         }
     }
 
@@ -107,9 +108,9 @@ public final class VoiceClient {
         return assigned;
     }
 
-    private static void receive(DataInputStream in, DataOutputStream out, UUID self, SourceDataLine speaker) {
+    private static void receive(Socket socket, DataInputStream in, DataOutputStream out, UUID self, SourceDataLine speaker) {
         try {
-            while (true) {
+            while (!socket.isClosed()) {
                 if (in.readInt() != MAGIC) return;
                 byte type = in.readByte();
                 UUID sender = new UUID(in.readLong(), in.readLong());
@@ -125,6 +126,11 @@ public final class VoiceClient {
                 }
             }
         } catch (IOException ignored) {
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+            }
         }
     }
 }
