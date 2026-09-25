@@ -61,6 +61,7 @@ class MainActivity : Activity() {
                         }
                         val hostValue = host.text.toString().trim()
                         val portValue = port.text.toString().trim().toIntOrNull() ?: 26467
+                        val pairCode = pair.text.toString().trim()
                         if (hostValue.isBlank()) {
                             runOnUiThread { statusView?.text = "Enter gateway host" }
                             wantConnection = false
@@ -72,7 +73,16 @@ class MainActivity : Activity() {
                         s.soTimeout = 35000
                         socket = s
                         running = true
-                        val credential = sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pair.text.toString()
+
+                        // A newly entered pairing code always takes precedence over
+                        // the cached session, so the user can deliberately pair again.
+                        val usePairing = pairCode.matches(Regex("\\d{6}"))
+                        val credential = if (usePairing) {
+                            "PAIR:" + pairCode
+                        } else {
+                            sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pairCode
+                        }
+
                         try {
                             runVoice(s, credential)
                         } catch (ex: Exception) {
