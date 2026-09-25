@@ -30,9 +30,11 @@ Magic is `0x4D564331` (`MVC1`).
 
 Type `1`.
 
-The UUID must identify the authenticated Minecraft player. Sequence is `0`.
+The UUID normally identifies the authenticated Minecraft player. Sequence is `0`.
 
-Payload is the UTF-8 gateway token from `plugins/Minecraft-VoiceChannel/config.yml`.
+For Bedrock pairing, the client may send an all-zero UUID (`00000000-0000-0000-0000-000000000000`) and a payload of `PAIR:<6-digit-code>`. The gateway resolves the pairing code to the Minecraft UUID, consumes the code, and binds the connection to that player.
+
+For token authentication, the UUID must identify the authenticated Minecraft player. Payload is the UTF-8 gateway token from `plugins/Minecraft-VoiceChannel/config.yml`.
 
 ### AUDIO
 
@@ -56,7 +58,7 @@ A Java voice client/mod must capture microphone audio, encode frames, connect to
 
 ## Bedrock client
 
-Geyser/Floodgate alone cannot expose a Bedrock device microphone to a Paper plugin. A companion Bedrock voice client is required. It authenticates the Minecraft UUID and gateway token, captures microphone audio, and implements this protocol.
+Geyser/Floodgate alone cannot expose a Bedrock device microphone to a Paper plugin. A companion Bedrock voice client is required. It authenticates through the one-time pairing code from `/voicechannel pair`, so the user does not need to enter the Minecraft UUID manually. It captures microphone audio and implements this protocol.
 
 The in-game `/voicechannel` UI remains the control surface for channels and moderation; the companion client provides microphone/audio I/O.
 
