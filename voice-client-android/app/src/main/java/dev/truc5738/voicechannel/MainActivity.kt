@@ -1,153 +1,216 @@
-package dev.truc5738.voicechannel.android
+package dev.truc5738.voicechannel
 
 import android.Manifest
 import android.app.Activity
-import android.content.pm.PackageManager
-import android.media.*
 import android.os.Bundle
 import android.widget.*
+import android.media.*
 import java.io.*
 import java.net.Socket
-import java.nio.charset.StandardCharsets
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
-import kotlin.concurrent.thread
+import android.content.Context
+import android.content.pm.PackageManager
 
 class MainActivity : Activity() {
-    companion object {
-        private const val MAGIC = 0x4D564331
-        private const val HELLO: Byte = 1
-        private const val AUDIO: Byte = 2
-        private const val GOODBYE: Byte = 3
-        private const val PING: Byte = 4
-        private const val PONG: Byte = 5
-        private const val SAMPLE_RATE = 16000
-        private const val FRAME_BYTES = 640
-        private const val REQUEST_AUDIO = 42
-    }
-    private lateinit var host: EditText
-    private lateinit var port: EditText
-    private lateinit var uuid: EditText
-    private lateinit var pair: EditText
-    private lateinit var status: TextView
     private var socket: Socket? = null
-    private var out: DataOutputStream? = null
-    @Volatile private var running = false
-    private var assignedUuid = UUID(0L, 0L)
-    private var sequence = 0
+    private var running = false
+    private var wantConnection = false
+    private var connectionThread: Thread? = null
+    private var sessionToken: String? = null
+    private var statusView: TextView? = null
+    private val sampleRate = 16000
+    private val frameBytes = sampleRate / 50 * 2
+    private val magic = 0x4D564331
+    private val pongType = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32,32,32,32) }
-        fun field(h: String) = EditText(this).apply { hint=h; singleLine=true }
-        host=field("Gateway host")
-        port=field("Gateway port (26467)"); port.setText("26467")
-        uuid=field("Minecraft UUID (normal mode)")
-        pair=field("6-digit pairing code")
-        status=TextView(this).apply { text="Disconnected" }
-        root.addView(host); root.addView(port); root.addView(uuid); root.addView(pair)
-        root.addView(Button(this).apply { text="Connect"; setOnClickListener { connect() } })
-        root.addView(Button(this).apply { text="Disconnect"; setOnClickListener { disconnect() } })
-        root.addView(status)
-        setContentView(root)
-    }
+        val host = EditText(this).apply { hint = "Gateway host" }
+        val port = EditText(this).apply { hint = "26467"; setText("26467") }
+        val pair = EditText(this).apply { hint = "Pair code (6 digits)" }
+        val status = TextView(this).apply { text = "Disconnected" }
+        statusView = status
+        val button = Button(this).apply { text = "Connect" }
+        val stop = Button(this).apply { text = "Stop" }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32,32,32,32)
+            addView(host); addView(port); addView(pair)
+            addView(status); addView(button); addView(stop)
+        }
+        setContentView(layout)
+        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 100)
+        }
+        sessionToken = getPreferences(Context.MODE_PRIVATE).getString("session_token", null)
 
-    private fun connect() {
-        if (running) return
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
-            status.text="Microphone permission required"; return
-        }
-        val h=host.text.toString().trim()
-        val p=port.text.toString().trim().toIntOrNull() ?: 26467
-        val code=pair.text.toString().trim()
-        val u=uuid.text.toString().trim()
-        val pairing=code.matches(Regex("\\d{6}"))
-        if (h.isEmpty() || (!pairing && runCatching { UUID.fromString(u) }.isFailure)) {
-            status.text="Enter gateway host and either a UUID or 6-digit pairing code"; return
-        }
-        thread(name="VoiceGateway") {
-            try {
-                val self=if(pairing) UUID(0L,0L) else UUID.fromString(u)
-                val token=if(pairing) "PAIR:"+code else "SESSION:"+u
-                val s=Socket(h,p); s.tcpNoDelay=true; socket=s
-                val input=DataInputStream(BufferedInputStream(s.getInputStream()))
-                val output=DataOutputStream(BufferedOutputStream(s.getOutputStream())); out=output
-                send(output,HELLO,self,0,token.toByteArray(StandardCharsets.UTF_8))
-                assignedUuid=readHelloAck(input,self) ?: throw IOException("Gateway authentication rejected")
-                running=true
-                runOnUiThread { status.text="Connected as "+assignedUuid }
-                val receiver=thread(name="VoiceReceiver") { receive(input,output) }
-                captureMicrophone(output)
-                running=false; receiver.join(500)
-            } catch(e:Exception) {
-                runOnUiThread { status.text="Disconnected: "+(e.message ?: "connection error") }
-            } finally { disconnect() }
-        }
-    }
-
-    private fun captureMicrophone(output: DataOutputStream) {
-        val min=AudioRecord.getMinBufferSize(SAMPLE_RATE,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT)
-        if(min<=0) throw IOException("Microphone is unavailable")
-        val recorder=AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION,SAMPLE_RATE,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,maxOf(min,FRAME_BYTES*4))
-        recorder.startRecording()
-        val frame=ByteArray(FRAME_BYTES)
-        try {
-            while(running) {
-                var offset=0
-                while(offset<frame.size && running) {
-                    val n=recorder.read(frame,offset,frame.size-offset)
-                    if(n<=0) throw IOException("Microphone read failed")
-                    offset+=n
+        button.setOnClickListener {
+            if (wantConnection) return@setOnClickListener
+            wantConnection = true
+            status.text = "Connecting..."
+            connectionThread = Thread {
+                var firstConnection = true
+                while (wantConnection) {
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            runOnUiThread { statusView?.text = "Microphone permission required" }
+                            wantConnection = false
+                            break
+                        }
+                        val hostValue = host.text.toString().trim()
+                        val portValue = port.text.toString().trim().toIntOrNull() ?: 26467
+                        if (hostValue.isBlank()) {
+                            runOnUiThread { statusView?.text = "Enter gateway host" }
+                            wantConnection = false
+                            break
+                        }
+                        val s = Socket(hostValue, portValue)
+                        s.tcpNoDelay = true
+                        s.keepAlive = true
+                        s.soTimeout = 35000
+                        socket = s
+                        running = true
+                        val credential = sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pair.text.toString()
+                        try {
+                            runVoice(s, credential)
+                        } catch (ex: Exception) {
+                            if (sessionToken != null && ex.message == "SESSION_REJECTED") {
+                                sessionToken = null
+                                getPreferences(Context.MODE_PRIVATE).edit().remove("session_token").apply()
+                                runOnUiThread { statusView?.text = "Session expired - enter pair code" }
+                                wantConnection = false
+                            } else if (ex.message == "Pairing rejected") {
+                                runOnUiThread { statusView?.text = "Pairing rejected - enter a new code" }
+                                wantConnection = false
+                            } else {
+                                throw ex
+                            }
+                        }
+                        if (!wantConnection) break
+                    } catch (ex: Exception) {
+                        running = false
+                        try { socket?.close() } catch (_: Exception) {}
+                        socket = null
+                        if (wantConnection) runOnUiThread { statusView?.text = "Disconnected - retrying" }
+                    }
+                    if (wantConnection) {
+                        try { Thread.sleep(if (firstConnection) 3000L else 2000L) } catch (_: InterruptedException) { break }
+                    }
+                    firstConnection = false
                 }
-                if(running) send(output,AUDIO,assignedUuid,sequence++,frame)
-            }
-        } finally { recorder.stop(); recorder.release() }
+            }.also { it.isDaemon = true; it.start() }
+        }
+        stop.setOnClickListener {
+            wantConnection = false
+            running = false
+            try { socket?.close() } catch (_: Exception) {}
+            runOnUiThread { statusView?.text = "Disconnected" }
+        }
     }
 
-    private fun receive(input:DataInputStream,output:DataOutputStream) {
-        val track=AudioTrack.Builder()
+    private fun runVoice(s: Socket, token: String) {
+        val input = DataInputStream(BufferedInputStream(s.getInputStream()))
+        val output = DataOutputStream(BufferedOutputStream(s.getOutputStream()))
+        var id = UUID(0L, 0L)
+        send(output, 1, id, 0, token.toByteArray())
+
+        val ack = ByteArray(29)
+        readFully(input, ack)
+        val ab = ByteBuffer.wrap(ack).order(ByteOrder.BIG_ENDIAN)
+        if (ab.int != magic || ab.get().toInt() != 1) {
+            if (token.startsWith("SESSION:")) throw IOException("SESSION_REJECTED")
+            throw IOException("Pairing rejected")
+        }
+        val assignedMsb = ab.long
+        val assignedLsb = ab.long
+        ab.int
+        val ackLength = ab.int
+        if (ackLength <= 0 || ackLength > 64) throw IOException("Invalid gateway response")
+        val ackPayload = ByteArray(ackLength)
+        readFully(input, ackPayload)
+        val ackText = String(ackPayload, Charsets.UTF_8)
+        if (!ackText.startsWith("OK")) throw IOException("Pairing rejected")
+        ackText.lineSequence().firstOrNull { it.startsWith("SESSION:") }?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
+            sessionToken = it
+            getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
+        }
+        id = UUID(assignedMsb, assignedLsb)
+        runOnUiThread { statusView?.text = "Connected" }
+
+        val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT, maxOf(min, frameBytes * 4))
+        val trackMin = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            .setAudioFormat(AudioFormat.Builder().setSampleRate(SAMPLE_RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setBufferSizeInBytes(FRAME_BYTES*8).setTransferMode(AudioTrack.MODE_STREAM).build()
-        track.play()
-        try {
-            while(running) {
-                if(input.readInt()!=MAGIC) throw IOException("Invalid gateway packet")
-                val type=input.readByte(); val sender=UUID(input.readLong(),input.readLong())
-                val seq=input.readInt(); val length=input.readInt()
-                if(length<0 || length>16384) throw IOException("Invalid audio frame")
-                val payload=ByteArray(length); input.readFully(payload)
-                when {
-                    type==AUDIO && sender!=assignedUuid -> track.write(payload,0,payload.size)
-                    type==PING -> send(output,PONG,assignedUuid,seq,ByteArray(0))
+            .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setBufferSizeInBytes(maxOf(trackMin, frameBytes * 4)).build()
+
+        Thread {
+            try {
+                track.play()
+                while (running) {
+                    val header = ByteArray(29)
+                    readFully(input, header)
+                    val hb = ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN)
+                    if (hb.int != magic) break
+                    val type = hb.get()
+                    val msb = hb.long
+                    val lsb = hb.long
+                    val seq = hb.int
+                    val len = hb.int
+                    if (len < 0 || len > 16384) break
+                    val data = ByteArray(len)
+                    readFully(input, data)
+                    if (type.toInt() == 2 && UUID(msb, lsb) != id) track.write(data, 0, data.size)
+                    if (type.toInt() == 4) {
+                        send(output, pongType, id, seq, ByteArray(0))
+                    }
                 }
+            } catch (_: Exception) {}
+            running = false
+            track.stop()
+            track.release()
+        }.start()
+
+        recorder.startRecording()
+        val frame = ByteArray(frameBytes)
+        var seq = 0
+        try {
+            while (running) {
+                var off=0
+                while (off < frame.size && running) {
+                    val n=recorder.read(frame,off,frame.size-off)
+                    if(n<=0) break
+                    off+=n
+                }
+                if(off==frame.size) send(output,2,id,seq++,frame)
             }
-        } catch(_:IOException) {} finally { track.stop(); track.release() }
+        } finally {
+            recorder.stop()
+            recorder.release()
+            try { send(output,3,id,0,ByteArray(0)) } catch (_: Exception) {}
+            try { s.close() } catch (_: Exception) {}
+            running=false
+        }
     }
 
-    private fun readHelloAck(input:DataInputStream,self:UUID):UUID? {
-        if(input.readInt()!=MAGIC || input.readByte()!=HELLO) return null
-        val assigned=UUID(input.readLong(),input.readLong()); input.readInt()
-        val length=input.readInt()
-        if(length<=0 || length>1024) return null
-        val payload=ByteArray(length); input.readFully(payload)
-        if(!String(payload,StandardCharsets.UTF_8).startsWith("OK")) return null
-        if(self.mostSignificantBits!=0L && assigned!=self) return null
-        return assigned
+    private fun send(out: DataOutputStream,type:Int,id:UUID,seq:Int,payload:ByteArray) {
+        synchronized(out) {
+            out.writeInt(magic); out.writeByte(type)
+            out.writeLong(id.mostSignificantBits); out.writeLong(id.leastSignificantBits)
+            out.writeInt(seq); out.writeInt(payload.size); out.write(payload); out.flush()
+        }
     }
 
-    @Synchronized private fun send(o:DataOutputStream,type:Byte,id:UUID,seq:Int,payload:ByteArray) {
-        o.writeInt(MAGIC); o.writeByte(type.toInt()); o.writeLong(id.mostSignificantBits); o.writeLong(id.leastSignificantBits)
-        o.writeInt(seq); o.writeInt(payload.size); o.write(payload); o.flush()
+    private fun readFully(input:InputStream,data:ByteArray) {
+        var off=0
+        while(off<data.size) {
+            val n=input.read(data,off,data.size-off)
+            if(n<0) throw EOFException()
+            off+=n
+        }
     }
-
-    private fun disconnect() {
-        running=false
-        try { out?.let { send(it,GOODBYE,assignedUuid,0,ByteArray(0)) } } catch(_:Exception) {}
-        try { socket?.close() } catch(_:Exception) {}
-        socket=null; out=null
-        runOnUiThread { status.text="Disconnected" }
-    }
-
-    override fun onDestroy() { disconnect(); super.onDestroy() }
 }
