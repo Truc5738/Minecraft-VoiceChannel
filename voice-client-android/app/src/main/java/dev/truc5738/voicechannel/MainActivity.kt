@@ -131,7 +131,12 @@ class MainActivity : Activity() {
         val ackPayload = ByteArray(ackLength)
         readFully(input, ackPayload)
         val ackText = String(ackPayload, Charsets.UTF_8)
-        if (!ackText.startsWith("OK")) throw IOException("Pairing rejected")
+        if (!ackText.startsWith("OK")) {
+            if (ackText.startsWith("ERROR:AUTH") && token.startsWith("SESSION:")) {
+                throw IOException("SESSION_REJECTED")
+            }
+            throw IOException("Pairing rejected")
+        }
         ackText.lineSequence().firstOrNull { it.startsWith("SESSION:") }?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
             sessionToken = it
             getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
