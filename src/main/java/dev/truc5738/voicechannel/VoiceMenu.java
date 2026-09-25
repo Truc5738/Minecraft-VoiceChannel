@@ -334,6 +334,31 @@ public final class VoiceMenu implements Listener {
         player.openInventory(inv);
     }
 
+    private void openJavaModeration(Player player) {
+        if (!player.hasPermission("voicechannel.admin")) {
+            player.sendMessage(ChatColor.RED + "You do not have permission.");
+            return;
+        }
+
+        Inventory inv = Bukkit.createInventory(null, 54, "Channel Moderation");
+        List<Player> targets = new ArrayList<>();
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (!target.equals(player)) targets.add(target);
+        }
+        targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
+
+        int slot = 0;
+        for (Player target : targets) {
+            if (slot >= 45) break;
+            String channel = manager.getChannel(target);
+            String status = channel.equals(manager.getChannel(player)) ? "Current channel" : "Other channel";
+            set(inv, slot++, target.getName(), "Channel: " + channel + " | " + status
+                    + " | Left click: mute | Right click: move to default");
+        }
+        set(inv, 49, "Back", "Return to voice menu");
+        player.openInventory(inv);
+    }
+
     @EventHandler
     public void onSubMenuClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
