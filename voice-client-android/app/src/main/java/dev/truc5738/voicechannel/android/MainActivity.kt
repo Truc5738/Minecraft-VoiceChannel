@@ -55,8 +55,22 @@ class MainActivity : Activity() {
     private fun runVoice(s: Socket, token: String) {
         val input = DataInputStream(BufferedInputStream(s.getInputStream()))
         val output = DataOutputStream(BufferedOutputStream(s.getOutputStream()))
-        val id = UUID(0L, 0L)
+        var id = UUID(0L, 0L)
         send(output, 1, id, 0, token.toByteArray())
+
+        val ack = ByteArray(29)
+        readFully(input, ack)
+        val ab = ByteBuffer.wrap(ack).order(ByteOrder.BIG_ENDIAN)
+        if (ab.int != magic || ab.get().toInt() != 1) throw IOException("Pairing rejected")
+        val assignedMsb = ab.long
+        val assignedLsb = ab.long
+        ab.int
+        val ackLength = ab.int
+        if (ackLength <= 0 || ackLength > 64) throw IOException("Invalid gateway response")
+        val ackPayload = ByteArray(ackLength)
+        readFully(input, ackPayload)
+        if (String(ackPayload, Charsets.UTF_8) != "OK") throw IOException("Pairing rejected")
+        id = UUID(assignedMsb, assignedLsb)
 
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
