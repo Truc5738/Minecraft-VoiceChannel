@@ -166,7 +166,7 @@ public final class VoiceGateway {
         } finally {
             if (session.uuid != null) {
                 boolean removed = sessions.remove(session.uuid, session);
-                if (removed) {
+                if (removed && !sessions.containsKey(session.uuid)) {
                     manager.setConnected(session.uuid, false);
                 }
             }
