@@ -12,41 +12,38 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Set up Java 25
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '9.1.0'
-
-      - name: Build plugin
-        run: gradle build --no-daemon
-
-      - name: Build voice client
-        run: gradle :voice-client:build --no-daemon
-
+      - name: Build Paper plugin and Java voice client
+        run: |
+          gradle build --no-daemon
+          gradle :voice-client:build --no-daemon
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
         with:
           name: Minecraft-VoiceChannel
           path: build/libs/*.jar
-
-      - name: Build Android Bedrock voice client
-        run: gradle -p voice-client-android :app:assembleDebug --no-daemon
-
-      - name: Upload Android Bedrock voice client
-        uses: actions/upload-artifact@v4
-        with:
-          name: Minecraft-VoiceChannel-Bedrock-Android
-          path: voice-client-android/app/build/outputs/apk/debug/*.apk
-
       - name: Upload Java voice client
         uses: actions/upload-artifact@v4
         with:
           name: Minecraft-VoiceChannel-VoiceClient
           path: voice-client/build/libs/*.jar
+      - name: Set up Java 17 for Android Gradle Plugin
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build Android Bedrock voice client
+        run: gradle -p voice-client-android :app:assembleDebug --no-daemon
+      - name: Upload Android Bedrock voice client
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minecraft-VoiceChannel-Bedrock-Android
+          path: voice-client-android/app/build/outputs/apk/debug/*.apk
