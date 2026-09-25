@@ -208,6 +208,7 @@ public final class VoiceGateway {
 
         session.uuid = uuid;
         manager.setConnected(uuid, true);
+        session.send(HELLO, uuid, 0, "OK".getBytes(StandardCharsets.UTF_8));
         return true;
     }
 
