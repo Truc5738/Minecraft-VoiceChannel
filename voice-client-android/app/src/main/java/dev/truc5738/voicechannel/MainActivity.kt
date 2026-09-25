@@ -160,6 +160,9 @@ class MainActivity : Activity() {
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT, maxOf(min, frameBytes * 4))
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            throw IOException("Microphone initialization failed")
+        }
         val trackMin = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
@@ -189,6 +192,7 @@ class MainActivity : Activity() {
                 }
             } catch (_: Exception) {}
             running = false
+            try { recorder.stop() } catch (_: Exception) {}
             track.stop()
             track.release()
         }.start()
