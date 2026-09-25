@@ -289,6 +289,8 @@ public final class VoiceGateway {
     private void handleAudio(Session session, int sequence, byte[] payload) {
         if (sessions.get(session.uuid) != session) return;
         if (!manager.isConnected(session.uuid) || manager.isMicMuted(session.uuid)) return;
+        if (sequence < 0 || (session.lastAudioSequence >= 0 && sequence <= session.lastAudioSequence)) return;
+        session.lastAudioSequence = sequence;
 
         manager.markSpeaking(session.uuid);
         VoiceRoute speaker = manager.getRoute(session.uuid);
@@ -356,6 +358,7 @@ public final class VoiceGateway {
         private UUID uuid;
         private volatile long lastPongAt = System.currentTimeMillis();
         private int heartbeatSequence;
+        private int lastAudioSequence = -1;
 
         private Session(Socket socket) {
             this.socket = socket;
