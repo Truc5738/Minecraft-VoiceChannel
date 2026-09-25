@@ -164,6 +164,7 @@ class MainActivity : Activity() {
                     }
                 }
             } catch (_: Exception) {}
+            running = false
             track.stop()
             track.release()
         }.start()
