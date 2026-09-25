@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public final class VoiceClient {
     private static final int MAGIC = 0x4D564331;
-    private static final byte HELLO = 1, AUDIO = 2, GOODBYE = 3;
+    private static final byte HELLO = 1, AUDIO = 2, GOODBYE = 3, PING = 4, PONG = 5;
     private static final int SAMPLE_RATE = 16000;
     private static final int FRAME_MS = 20;
     private static final int SAMPLES = SAMPLE_RATE * FRAME_MS / 1000;
@@ -39,7 +39,7 @@ public final class VoiceClient {
             mic.start();
             speaker.start();
 
-            Thread receiver = new Thread(() -> receive(in, uuid, speaker), "VoiceClient-Receiver");
+            Thread receiver = new Thread(() -> receive(in, out, uuid, speaker), "VoiceClient-Receiver");
             receiver.setDaemon(true);
             receiver.start();
 
@@ -81,7 +81,7 @@ public final class VoiceClient {
         out.flush();
     }
 
-    private static void receive(DataInputStream in, UUID self, SourceDataLine speaker) {
+    private static void receive(DataInputStream in, DataOutputStream out, UUID self, SourceDataLine speaker) {
         try {
             while (true) {
                 if (in.readInt() != MAGIC) return;
@@ -92,7 +92,7 @@ public final class VoiceClient {
                 if (length < 0 || length > 16384) return;
                 byte[] payload = in.readNBytes(length);
                 if (payload.length != length) return;
-                if (type == AUDIO && !sender.equals(self)) speaker.write(payload, 0, payload.length);
+                if (type == AUDIO && !sender.equals(self)) {\n                    speaker.write(payload, 0, payload.length);\n                } else if (type == PING) {\n                    send(out, PONG, self, sequence, new byte[0]);\n                }
             }
         } catch (IOException ignored) {
         }
