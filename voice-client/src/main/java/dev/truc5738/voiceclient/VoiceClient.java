@@ -4,7 +4,6 @@ import javax.sound.sampled.*;
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.UUID;
 
 public final class VoiceClient {
