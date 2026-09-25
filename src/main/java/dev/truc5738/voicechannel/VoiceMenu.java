@@ -77,7 +77,7 @@ public final class VoiceMenu implements Listener {
                 .button("Player Mute")
                 .button("Private Channel")
                 .button("Channel Moderation")
-                 .button("Voice Settings")
+                .button("Voice Settings")
                 .button("Pair Device")
                 .button("Close");
 
@@ -124,7 +124,7 @@ public final class VoiceMenu implements Listener {
     }
 
     private void openBedrockChannels(Player player) {
-        List<String> channels = new ArrayList<>(manager.getChannels());
+        List<String> channels = new ArrayList<>(manager.getPublicChannels());
         channels.sort(String.CASE_INSENSITIVE_ORDER);
         SimpleForm.Builder form = SimpleForm.builder()
                 .title("Voice Channels")
@@ -313,7 +313,7 @@ public final class VoiceMenu implements Listener {
     private void openJavaChannels(Player player) {
         Inventory inv = Bukkit.createInventory(null, 27, "Voice Channels");
         int slot = 10;
-        List<String> channels = new ArrayList<>(manager.getChannels());
+        List<String> channels = new ArrayList<>(manager.getPublicChannels());
         channels.sort(String.CASE_INSENSITIVE_ORDER);
         for (String channel : channels) {
             if (slot >= 17) break;
@@ -347,7 +347,7 @@ public final class VoiceMenu implements Listener {
         }
 
         if (title.equals("Voice Channels") && slot >= 10 && slot < 17) {
-            List<String> channels = new ArrayList<>(manager.getChannels());
+            List<String> channels = new ArrayList<>(manager.getPublicChannels());
             channels.sort(String.CASE_INSENSITIVE_ORDER);
             int index = slot - 10;
             if (index < channels.size() && manager.joinChannel(player, channels.get(index))) {
@@ -367,24 +367,6 @@ public final class VoiceMenu implements Listener {
                 openJavaMutePlayers(player);
             }
         }
-    }
-
-    private void openJavaModeration(Player player) {
-        if (!player.hasPermission("voicechannel.admin")) {
-            player.sendMessage(ChatColor.RED + "You do not have permission.");
-            return;
-        }
-        Inventory inv = Bukkit.createInventory(null, 54, "Channel Moderation");
-        int slot = 0;
-        for (Player target : Bukkit.getOnlinePlayers()) {
-            if (target.equals(player) || slot >= 45) continue;
-            String state = manager.isChannelMuted(manager.getChannel(player), target.getUniqueId())
-                    ? "Channel muted: click to unmute; right-click to move"
-                    : "Click to channel mute; right-click to move";
-            set(inv, slot++, target.getName(), state);
-        }
-        set(inv, 49, "Back", "Return to voice menu");
-        player.openInventory(inv);
     }
 
     @EventHandler
@@ -424,7 +406,6 @@ public final class VoiceMenu implements Listener {
         }
         manager.remove(event.getPlayer());
     }
-
 
     private void sendPairCode(Player player) {
         if (plugin instanceof VoiceChannelPlugin vp && vp.getVoiceGateway() != null && vp.getVoiceGateway().isRunning()) {
