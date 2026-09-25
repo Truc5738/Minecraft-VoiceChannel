@@ -42,9 +42,11 @@ public final class VoiceClient {
 
             socket.setTcpNoDelay(true);
             send(out, HELLO, uuid, 0, token.getBytes(StandardCharsets.UTF_8));
-            if (!readHelloAck(in, uuid)) {
+            UUID assignedUuid = readHelloAck(in, uuid);
+            if (assignedUuid == null) {
                 throw new IOException("Voice gateway authentication rejected.");
             }
+            uuid = assignedUuid;
             mic.open(format);
             speaker.open(format);
             mic.start();
@@ -92,16 +94,17 @@ public final class VoiceClient {
         out.flush();
     }
 
-    private static boolean readHelloAck(DataInputStream in, UUID self) throws IOException {
-        if (in.readInt() != MAGIC) return false;
-        if (in.readByte() != HELLO) return false;
+    private static UUID readHelloAck(DataInputStream in, UUID self) throws IOException {
+        if (in.readInt() != MAGIC) return null;
+        if (in.readByte() != HELLO) return null;
         UUID assigned = new UUID(in.readLong(), in.readLong());
         in.readInt();
         int length = in.readInt();
-        if (length <= 0 || length > 1024) return false;
+        if (length <= 0 || length > 1024) return null;
         byte[] payload = in.readNBytes(length);
-        return payload.length == length && new String(payload, StandardCharsets.UTF_8).startsWith("OK")
-                && (self.getMostSignificantBits() == 0L || assigned.equals(self));
+        if (payload.length != length || !new String(payload, StandardCharsets.UTF_8).startsWith("OK")) return null;
+        if (self.getMostSignificantBits() != 0L && !assigned.equals(self)) return null;
+        return assigned;
     }
 
     private static void receive(DataInputStream in, DataOutputStream out, UUID self, SourceDataLine speaker) {
