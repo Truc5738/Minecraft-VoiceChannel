@@ -87,12 +87,16 @@ public final class VoiceClient {
                 if (in.readInt() != MAGIC) return;
                 byte type = in.readByte();
                 UUID sender = new UUID(in.readLong(), in.readLong());
-                in.readInt();
+                int sequence = in.readInt();
                 int length = in.readInt();
                 if (length < 0 || length > 16384) return;
                 byte[] payload = in.readNBytes(length);
                 if (payload.length != length) return;
-                if (type == AUDIO && !sender.equals(self)) {\n                    speaker.write(payload, 0, payload.length);\n                } else if (type == PING) {\n                    send(out, PONG, self, sequence, new byte[0]);\n                }
+                if (type == AUDIO && !sender.equals(self)) {
+                    speaker.write(payload, 0, payload.length);
+                } else if (type == PING) {
+                    send(out, PONG, self, sequence, new byte[0]);
+                }
             }
         } catch (IOException ignored) {
         }
