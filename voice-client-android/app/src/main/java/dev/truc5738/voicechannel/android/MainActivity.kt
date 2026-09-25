@@ -18,6 +18,7 @@ class MainActivity : Activity() {
     private var wantConnection = false
     private var connectionThread: Thread? = null
     private var sessionToken: String? = null
+    private var statusView: TextView? = null
     private val sampleRate = 16000
     private val frameBytes = sampleRate / 50 * 2
     private val magic = 0x4D564331
@@ -29,7 +30,7 @@ class MainActivity : Activity() {
         val host = EditText(this).apply { hint = "Gateway host" }
         val port = EditText(this).apply { hint = "26467"; setText("26467") }
         val pair = EditText(this).apply { hint = "Pair code (6 digits)" }
-        val status = TextView(this).apply { text = "Disconnected" }
+        val status = TextView(this).apply { text = "Disconnected" }\n        statusView = status
         val button = Button(this).apply { text = "Connect" }
         val stop = Button(this).apply { text = "Stop" }
         val layout = LinearLayout(this).apply {
@@ -60,7 +61,7 @@ class MainActivity : Activity() {
                             if (sessionToken != null && ex.message == "SESSION_REJECTED") {
                                 sessionToken = null
                                 getPreferences(Context.MODE_PRIVATE).edit().remove("session_token").apply()
-                                runOnUiThread { status.text = "Session expired - enter pair code" }
+                                runOnUiThread { statusView?.text = "Session expired - enter pair code" }
                                 wantConnection = false
                             } else {
                                 throw ex
@@ -69,7 +70,7 @@ class MainActivity : Activity() {
                         if (!wantConnection) break
                     } catch (ex: Exception) {
                         running = false
-                        if (wantConnection) runOnUiThread { status.text = "Disconnected - retrying" }
+                        if (wantConnection) runOnUiThread { statusView?.text = "Disconnected - retrying" }
                     }
                     if (wantConnection) {
                         try { Thread.sleep(if (firstConnection) 3000L else 2000L) } catch (_: InterruptedException) { break }
@@ -82,7 +83,7 @@ class MainActivity : Activity() {
             wantConnection = false
             running = false
             try { socket?.close() } catch (_: Exception) {}
-            runOnUiThread { status.text = "Disconnected" }
+            runOnUiThread { statusView?.text = "Disconnected" }
         }
     }
 
@@ -113,7 +114,7 @@ class MainActivity : Activity() {
             getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
         }
         id = UUID(assignedMsb, assignedLsb)
-        runOnUiThread { status.text = "Connected" }
+        runOnUiThread { statusView?.text = "Connected" }
 
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
