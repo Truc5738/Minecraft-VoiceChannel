@@ -14,6 +14,8 @@ import java.util.UUID
 class MainActivity : Activity() {
     private var socket: Socket? = null
     private var running = false
+    private var wantConnection = false
+    private var connectionThread: Thread? = null
     private val sampleRate = 16000
     private val frameBytes = sampleRate / 50 * 2
     private val magic = 0x4D564331
@@ -36,20 +38,36 @@ class MainActivity : Activity() {
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 100)
 
         button.setOnClickListener {
-            if (running) return@setOnClickListener
-            Thread {
-                try {
-                    val s = Socket(host.text.toString(), port.text.toString().toInt())
-                    socket = s
-                    running = true
-                    runVoice(s, "PAIR:" + pair.text.toString())
-                } catch (ex: Exception) {
-                    running = false
-                    runOnUiThread { status.text = "Error: " + ex.message }
+            if (wantConnection) return@setOnClickListener
+            wantConnection = true
+            status.text = "Connecting..."
+            connectionThread = Thread {
+                var firstConnection = true
+                while (wantConnection) {
+                    try {
+                        val s = Socket(host.text.toString(), port.text.toString().toInt())
+                        socket = s
+                        running = true
+                        runOnUiThread { status.text = "Connected" }
+                        runVoice(s, "PAIR:" + pair.text.toString())
+                        if (!wantConnection) break
+                    } catch (ex: Exception) {
+                        running = false
+                        if (wantConnection) runOnUiThread { status.text = "Disconnected - retrying" }
+                    }
+                    if (wantConnection) {
+                        try { Thread.sleep(if (firstConnection) 3000L else 2000L) } catch (_: InterruptedException) { break }
+                    }
+                    firstConnection = false
                 }
-            }.start()
+            }.also { it.isDaemon = true; it.start() }
         }
-        stop.setOnClickListener { running=false; try { socket?.close() } catch (_: Exception) {} }
+        stop.setOnClickListener {
+            wantConnection = false
+            running = false
+            try { socket?.close() } catch (_: Exception) {}
+            runOnUiThread { status.text = "Disconnected" }
+        }
     }
 
     private fun runVoice(s: Socket, token: String) {
