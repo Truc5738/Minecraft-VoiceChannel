@@ -53,9 +53,20 @@ class MainActivity : Activity() {
                         val s = Socket(host.text.toString(), port.text.toString().toInt())
                         socket = s
                         running = true
-                        runOnUiThread { status.text = "Connected" }
                         val credential = sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pair.text.toString()
-                        runVoice(s, credential)
+                        try {
+                            runVoice(s, credential)
+                            runOnUiThread { status.text = "Connected" }
+                        } catch (ex: Exception) {
+                            if (sessionToken != null && ex.message == "SESSION_REJECTED") {
+                                sessionToken = null
+                                getPreferences(Context.MODE_PRIVATE).edit().remove("session_token").apply()
+                                runOnUiThread { status.text = "Session expired - enter pair code" }
+                                wantConnection = false
+                            } else {
+                                throw ex
+                            }
+                        }
                         if (!wantConnection) break
                     } catch (ex: Exception) {
                         running = false
@@ -85,7 +96,10 @@ class MainActivity : Activity() {
         val ack = ByteArray(29)
         readFully(input, ack)
         val ab = ByteBuffer.wrap(ack).order(ByteOrder.BIG_ENDIAN)
-        if (ab.int != magic || ab.get().toInt() != 1) throw IOException("Pairing rejected")
+        if (ab.int != magic || ab.get().toInt() != 1) {
+            if (token.startsWith("SESSION:")) throw IOException("SESSION_REJECTED")
+            throw IOException("Pairing rejected")
+        }
         val assignedMsb = ab.long
         val assignedLsb = ab.long
         ab.int
@@ -126,7 +140,9 @@ class MainActivity : Activity() {
                     val data = ByteArray(len)
                     readFully(input, data)
                     if (type.toInt() == 2 && UUID(msb, lsb) != id) track.write(data, 0, data.size)
-                    if (type.toInt() == pongType) continue
+                    if (type.toInt() == 4) {
+                        send(output, pongType, id, seq, ByteArray(0))
+                    }
                 }
             } catch (_: Exception) {}
             track.stop()
