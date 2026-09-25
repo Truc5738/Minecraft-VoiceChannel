@@ -22,7 +22,6 @@ class MainActivity : Activity() {
     private val sampleRate = 16000
     private val frameBytes = sampleRate / 50 * 2
     private val magic = 0x4D564331
-    private val pingType = 4
     private val pongType = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,7 +29,8 @@ class MainActivity : Activity() {
         val host = EditText(this).apply { hint = "Gateway host" }
         val port = EditText(this).apply { hint = "26467"; setText("26467") }
         val pair = EditText(this).apply { hint = "Pair code (6 digits)" }
-        val status = TextView(this).apply { text = "Disconnected" }\n        statusView = status
+        val status = TextView(this).apply { text = "Disconnected" }
+        statusView = status
         val button = Button(this).apply { text = "Connect" }
         val stop = Button(this).apply { text = "Stop" }
         val layout = LinearLayout(this).apply {
@@ -149,18 +149,6 @@ class MainActivity : Activity() {
             track.stop()
             track.release()
         }.start()
-
-        Thread {
-            var pingSeq = 0
-            while (running) {
-                try {
-                    Thread.sleep(10_000L)
-                    if (running) send(output, pingType, id, pingSeq++, ByteArray(0))
-                } catch (_: Exception) {
-                    break
-                }
-            }
-        }.also { it.isDaemon = true; it.start() }
 
         recorder.startRecording()
         val frame = ByteArray(frameBytes)
