@@ -42,6 +42,7 @@ public final class VoiceGateway {
     private ServerSocket serverSocket;
     private Thread acceptThread;
     private String token;
+    private final Map<String, Pairing> pairings = new ConcurrentHashMap<>();
 
     public VoiceGateway(JavaPlugin plugin, VoiceManager manager) {
         this.plugin = plugin;
@@ -91,7 +92,15 @@ public final class VoiceGateway {
         }
         for (Session session : new ArrayList<>(sessions.values())) session.close();
         sessions.clear();
+        pairings.clear();
         workers.shutdownNow();
+    }
+
+    public String createPairCode(UUID uuid) {
+        String code = String.format(java.util.Locale.ROOT, "%06d", new SecureRandom().nextInt(1_000_000));
+        pairings.entrySet().removeIf(e -> e.getValue().expiresAt < System.currentTimeMillis() || e.getValue().uuid.equals(uuid));
+        pairings.put(code, new Pairing(uuid, System.currentTimeMillis() + 120_000L));
+        return code;
     }
 
     public int getConnectedClients() {
@@ -173,10 +182,19 @@ public final class VoiceGateway {
         byte[] payload = session.input.readNBytes(length);
         if (payload.length != length) return false;
 
-        String receivedToken = new String(payload, StandardCharsets.UTF_8);
-        if (!MessageDigest.isEqual(
-                receivedToken.getBytes(StandardCharsets.UTF_8),
-                token.getBytes(StandardCharsets.UTF_8))) return false;
+        String credential = new String(payload, StandardCharsets.UTF_8);
+        boolean validToken = MessageDigest.isEqual(
+                credential.getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8));
+        boolean validPair = false;
+        if (credential.startsWith("PAIR:")) {
+            String code = credential.substring(5);
+            Pairing pairing = pairings.get(code);
+            if (pairing != null && pairing.uuid.equals(uuid) && pairing.expiresAt >= System.currentTimeMillis()) {
+                validPair = pairings.remove(code, pairing);
+            }
+        }
+        if (!validToken && !validPair) return false;
 
         Player player = plugin.getServer().getPlayer(uuid);
         if (player == null || !player.isOnline()) return false;
@@ -218,6 +236,12 @@ public final class VoiceGateway {
         byte[] bytes = new byte[32];
         new SecureRandom().nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static final class Pairing {
+        private final UUID uuid;
+        private final long expiresAt;
+        private Pairing(UUID uuid, long expiresAt) { this.uuid = uuid; this.expiresAt = expiresAt; }
     }
 
     private static final class Session {
