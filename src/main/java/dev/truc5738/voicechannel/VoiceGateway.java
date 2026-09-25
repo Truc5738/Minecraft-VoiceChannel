@@ -144,6 +144,16 @@ public final class VoiceGateway {
         }
     }
 
+    private void removeSession(Session target) {
+        if (target == null || target.uuid == null) return;
+        UUID uuid = target.uuid;
+        boolean removed = sessions.remove(uuid, target);
+        if (removed && !sessions.containsKey(uuid)) {
+            manager.setConnected(uuid, false);
+        }
+        target.close();
+    }
+
     private void heartbeat() {
         if (!running) return;
         long now = System.currentTimeMillis();
@@ -293,7 +303,7 @@ public final class VoiceGateway {
             try {
                 recipient.send(AUDIO, session.uuid, sequence, payload);
             } catch (IOException exception) {
-                recipient.close();
+                removeSession(recipient);
             }
         }
     }
