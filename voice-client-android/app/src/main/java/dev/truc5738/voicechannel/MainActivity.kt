@@ -74,8 +74,6 @@ class MainActivity : Activity() {
                         socket = s
                         running = true
 
-                        // A newly entered pairing code always takes precedence over
-                        // the cached session, so the user can deliberately pair again.
                         val usePairing = pairCode.matches(Regex("\\d{6}"))
                         val credential = if (usePairing) {
                             "PAIR:" + pairCode
@@ -135,7 +133,8 @@ class MainActivity : Activity() {
         }
         val assignedMsb = ab.long
         val assignedLsb = ab.long
-        ab.int
+        val ackSequence = ab.int
+        if (ackSequence != 0) throw IOException("Invalid gateway response")
         val ackLength = ab.int
         if (ackLength <= 0 || ackLength > 64) throw IOException("Invalid gateway response")
         val ackPayload = ByteArray(ackLength)
@@ -158,18 +157,25 @@ class MainActivity : Activity() {
         runOnUiThread { statusView?.text = "Connected" }
 
         val min = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        if (min <= 0) throw IOException("Microphone is not available")
         val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT, maxOf(min, frameBytes * 4))
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
             throw IOException("Microphone initialization failed")
         }
         val trackMin = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        if (trackMin <= 0) {
+            recorder.release()
+            throw IOException("Speaker is not available")
+        }
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
             .setBufferSizeInBytes(maxOf(trackMin, frameBytes * 4)).build()
 
         Thread {
+            var lastAudioSequence = 0
+            var haveAudioSequence = false
             try {
                 track.play()
                 while (running) {
@@ -185,15 +191,31 @@ class MainActivity : Activity() {
                     if (len < 0 || len > 16384) break
                     val data = ByteArray(len)
                     readFully(input, data)
-                    if (type.toInt() == 2 && UUID(msb, lsb) != id) track.write(data, 0, data.size)
-                    if (type.toInt() == 4) {
-                        send(output, pongType, id, seq, ByteArray(0))
+                    when (type.toInt()) {
+                        2 -> {
+                            if (len != frameBytes) break
+                            if (UUID(msb, lsb) == id) continue
+                            if (haveAudioSequence && Integer.compareUnsigned(seq, lastAudioSequence) <= 0) continue
+                            lastAudioSequence = seq
+                            haveAudioSequence = true
+                            track.write(data, 0, frameBytes)
+                        }
+                        4 -> {
+                            if (len != 0) break
+                            send(output, pongType, id, seq, ByteArray(0))
+                        }
+                        3 -> break
+                        5 -> {
+                            if (len != 0) break
+                        }
+                        else -> break
                     }
                 }
             } catch (_: Exception) {}
             running = false
             try { recorder.stop() } catch (_: Exception) {}
-            track.stop()
+            try { recorder.release() } catch (_: Exception) {}
+            try { track.stop() } catch (_: Exception) {}
             track.release()
         }.start()
 
@@ -211,7 +233,7 @@ class MainActivity : Activity() {
                 if(off==frame.size) send(output,2,id,seq++,frame)
             }
         } finally {
-            recorder.stop()
+            try { recorder.stop() } catch (_: Exception) {}
             recorder.release()
             try { send(output,3,id,0,ByteArray(0)) } catch (_: Exception) {}
             try { s.close() } catch (_: Exception) {}
