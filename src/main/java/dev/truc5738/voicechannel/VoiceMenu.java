@@ -14,6 +14,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import net.kyori.adventure.text.Component;
 
@@ -24,10 +25,12 @@ import org.geysermc.floodgate.api.FloodgateApi;
 public final class VoiceMenu implements Listener {
     private final JavaPlugin plugin;
     private final VoiceManager manager;
+    private final org.bukkit.NamespacedKey playerTargetKey;
 
     public VoiceMenu(JavaPlugin plugin, VoiceManager manager) {
         this.plugin = plugin;
         this.manager = manager;
+        this.playerTargetKey = new org.bukkit.NamespacedKey(plugin, "voice-target");
     }
 
     public void open(Player player) {
@@ -445,7 +448,7 @@ public final class VoiceMenu implements Listener {
         int start = current * 45;
         for (int i = 0; i < 45 && start + i < targets.size(); i++) {
             Player target = targets.get(start + i);
-            set(inv, i, target.getName(), manager.isMuted(player, target) ? "Muted: click to unmute" : "Click to mute");
+            setPlayerTarget(inv, i, target, manager.isMuted(player, target) ? "Muted: click to unmute" : "Click to mute");
         }
         if (current > 0) set(inv, 45, "Previous", "Previous player page");
         set(inv, 49, "Back", "Return to voice menu");
@@ -472,7 +475,7 @@ public final class VoiceMenu implements Listener {
         int start = current * 45;
         for (int i = 0; i < 45 && start + i < targets.size(); i++) {
             Player target = targets.get(start + i);
-            set(inv, i, target.getName(), "Channel: " + currentChannel
+            setPlayerTarget(inv, i, target, "Channel: " + currentChannel
                     + " | Left click: mute | Right click: move to default");
         }
         if (current > 0) set(inv, 45, "Previous", "Previous player page");
@@ -509,16 +512,15 @@ public final class VoiceMenu implements Listener {
         if (slot == 45) { openJavaMutePlayers(player, page - 1); return; }
         if (slot == 53) { openJavaMutePlayers(player, page + 1); return; }
         if (slot >= 0 && slot < 45) {
-            List<Player> targets = new ArrayList<>();
-            for (Player target : Bukkit.getOnlinePlayers()) if (!target.equals(player)) targets.add(target);
-            targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
-            int index = page * 45 + slot;
-            if (index < targets.size()) {
-                Player target = targets.get(index);
-                manager.toggleMute(player, target);
-                player.sendMessage(ChatColor.GREEN + (manager.isMuted(player, target) ? "Player muted." : "Player unmuted."));
+            Player target = getPlayerTarget(event.getCurrentItem());
+            if (target == null || target.equals(player) || !target.isOnline()) {
+                player.sendMessage(ChatColor.RED + "Player is no longer available.");
                 openJavaMutePlayers(player, page);
+                return;
             }
+            manager.toggleMute(player, target);
+            player.sendMessage(ChatColor.GREEN + (manager.isMuted(player, target) ? "Player muted." : "Player unmuted."));
+            openJavaMutePlayers(player, page);
         }
     }
 
@@ -536,17 +538,15 @@ public final class VoiceMenu implements Listener {
         if (slot == 53) { openJavaModeration(player, page + 1); return; }
         if (slot < 0 || slot >= 45) return;
 
-        String currentChannel = manager.getChannel(player);
-        List<Player> targets = new ArrayList<>();
-        for (Player target : Bukkit.getOnlinePlayers()) {
-            if (!target.equals(player) && manager.isMemberOfChannel(currentChannel, target.getUniqueId())) targets.add(target);
-        }
-        targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
-        int index = page * 45 + slot;
-        if (index >= targets.size()) return;
-
-        Player target = targets.get(index);
         String channel = manager.getChannel(player);
+        Player target = getPlayerTarget(event.getCurrentItem());
+        if (target == null || target.equals(player) || !target.isOnline()
+                || !manager.isMemberOfChannel(channel, target.getUniqueId())) {
+            player.sendMessage(ChatColor.RED + "Player is no longer in your channel.");
+            openJavaModeration(player, page);
+            return;
+        }
+
         if (event.isRightClick()) {
             if (manager.kickFromChannel(channel, target.getUniqueId())) {
                 player.sendMessage(ChatColor.YELLOW + "Player moved to the default voice channel: " + target.getName());
@@ -577,6 +577,27 @@ public final class VoiceMenu implements Listener {
             player.sendMessage(ChatColor.GRAY + "Expires in 120 seconds. Gateway port: " + port + ".");
         } else {
             player.sendMessage(ChatColor.RED + "Voice gateway is unavailable.");
+        }
+    }
+
+    private void setPlayerTarget(Inventory inventory, int slot, Player target, String lore) {
+        ItemStack item = new ItemStack(Material.PAPER);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text(target.getName(), net.kyori.adventure.text.format.NamedTextColor.WHITE));
+        meta.lore(List.of(Component.text(lore, net.kyori.adventure.text.format.NamedTextColor.GRAY)));
+        meta.getPersistentDataContainer().set(playerTargetKey, PersistentDataType.STRING, target.getUniqueId().toString());
+        item.setItemMeta(meta);
+        inventory.setItem(slot, item);
+    }
+
+    private Player getPlayerTarget(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return null;
+        String raw = item.getItemMeta().getPersistentDataContainer().get(playerTargetKey, PersistentDataType.STRING);
+        if (raw == null) return null;
+        try {
+            return Bukkit.getPlayer(java.util.UUID.fromString(raw));
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 
