@@ -234,7 +234,7 @@ public final class VoiceMenu implements Listener {
     private void openBedrockModerationActions(Player player, Player target) {
         SimpleForm form = SimpleForm.builder()
                 .title("Moderation: " + target.getName())
-                .content("Choose an action for the current channel.")
+                .content("Choose an action for this channel.")
                 .button("Toggle channel mute")
                 .button("Move to default channel")
                 .button("Back")
