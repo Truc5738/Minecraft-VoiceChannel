@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 public final class VoiceGateway {
     private static final int MAX_FRAME_SIZE = 16 * 1024;
     private static final int MAX_AUDIO_FRAMES_PER_SECOND = 75;
+    private static final long MAX_WRITE_STALL_MILLIS = 15_000L;
     private static final int MAGIC = 0x4D564331;
     private static final byte HELLO = 1;
     private static final byte AUDIO = 2;
@@ -174,15 +175,18 @@ public final class VoiceGateway {
         long now = System.currentTimeMillis();
         for (Session session : new ArrayList<>(sessions.values())) {
             if (session.uuid == null) continue;
-            if (now - session.lastPongAt > 15_000L) {
+            if (now - session.lastPongAt > 15_000L || session.isWriteStalled(now)) {
                 removeSession(session);
                 continue;
             }
-            try {
-                session.send(PING, session.uuid, session.heartbeatSequence++, new byte[0]);
-            } catch (IOException exception) {
-                removeSession(session);
-            }
+            int sequence = session.heartbeatSequence++;
+            workers.submit(() -> {
+                try {
+                    session.send(PING, session.uuid, sequence, new byte[0]);
+                } catch (IOException exception) {
+                    removeSession(session);
+                }
+            });
         }
     }
 
@@ -430,6 +434,8 @@ public final class VoiceGateway {
         private long audioWindowStartedAt = System.currentTimeMillis();
         private int audioFramesInWindow;
         private volatile boolean audioWriterRunning;
+        private volatile long writeStartedAt;
+        private volatile long lastWriteCompletedAt = System.currentTimeMillis();
         private Thread audioWriter;
 
         private Session(Socket socket) {
@@ -458,6 +464,11 @@ public final class VoiceGateway {
             audioWriter.start();
         }
 
+        private boolean isWriteStalled(long now) {
+            long started = writeStartedAt;
+            return started > 0L && now - started > MAX_WRITE_STALL_MILLIS;
+        }
+
         private void enqueueAudio(UUID sender, int sequence, byte[] payload) {
             if (!audioWriterRunning || socket.isClosed()) return;
             AudioFrame frame = new AudioFrame(sender, sequence, payload);
@@ -469,14 +480,20 @@ public final class VoiceGateway {
 
         private synchronized void send(byte type, UUID sender, int sequence, byte[] payload) throws IOException {
             if (output == null) throw new IOException("Voice session is not ready.");
-            output.writeInt(MAGIC);
-            output.writeByte(type);
-            output.writeLong(sender.getMostSignificantBits());
-            output.writeLong(sender.getLeastSignificantBits());
-            output.writeInt(sequence);
-            output.writeInt(payload.length);
-            output.write(payload);
-            output.flush();
+            writeStartedAt = System.currentTimeMillis();
+            try {
+                output.writeInt(MAGIC);
+                output.writeByte(type);
+                output.writeLong(sender.getMostSignificantBits());
+                output.writeLong(sender.getLeastSignificantBits());
+                output.writeInt(sequence);
+                output.writeInt(payload.length);
+                output.write(payload);
+                output.flush();
+                lastWriteCompletedAt = System.currentTimeMillis();
+            } finally {
+                writeStartedAt = 0L;
+            }
         }
 
         private void close() {
