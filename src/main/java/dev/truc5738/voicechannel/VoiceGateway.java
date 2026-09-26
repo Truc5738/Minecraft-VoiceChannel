@@ -53,6 +53,7 @@ public final class VoiceGateway {
     private String token;
     private final Map<String, Pairing> pairings = new ConcurrentHashMap<>();
     private final Map<String, SessionCredential> credentials = new ConcurrentHashMap<>();
+    private final Map<UUID, String> credentialByPlayer = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
 
     public VoiceGateway(JavaPlugin plugin, VoiceManager manager) {
@@ -103,6 +104,7 @@ public final class VoiceGateway {
         sessions.clear();
         pairings.clear();
         credentials.clear();
+        credentialByPlayer.clear();
         workers.shutdownNow();
         heartbeat.shutdownNow();
     }
@@ -340,17 +342,27 @@ public final class VoiceGateway {
 
     private String findOrCreateSessionToken(UUID uuid) {
         long now = System.currentTimeMillis();
-        credentials.entrySet().removeIf(e -> e.getValue().expiresAt < now);
-        for (Map.Entry<String, SessionCredential> entry : credentials.entrySet()) {
-            if (entry.getValue().uuid.equals(uuid)) {
-                entry.getValue().expiresAt = now + 86_400_000L;
-                return entry.getKey();
+        credentials.entrySet().removeIf(e -> {
+            boolean expired = e.getValue().expiresAt < now;
+            if (expired) credentialByPlayer.remove(e.getValue().uuid, e.getKey());
+            return expired;
+        });
+
+        String existing = credentialByPlayer.get(uuid);
+        if (existing != null) {
+            SessionCredential stored = credentials.get(existing);
+            if (stored != null && stored.uuid.equals(uuid)) {
+                stored.expiresAt = now + 86_400_000L;
+                return existing;
             }
+            credentialByPlayer.remove(uuid, existing);
         }
+
         byte[] bytes = new byte[32];
         random.nextBytes(bytes);
         String value = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         credentials.put(value, new SessionCredential(uuid, now + 86_400_000L));
+        credentialByPlayer.put(uuid, value);
         return value;
     }
 
