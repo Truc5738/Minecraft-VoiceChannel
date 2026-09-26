@@ -298,7 +298,7 @@ public final class VoiceGateway {
         if (sessions.get(session.uuid) != session) return;
         if (!manager.isConnected(session.uuid) || manager.isMicMuted(session.uuid)) return;
         if (payload.length != 640) return;
-        if (sequence < 0 || (session.lastAudioSequence >= 0 && sequence <= session.lastAudioSequence)) return;
+        if (session.lastAudioSequence >= 0 && Integer.compareUnsigned(sequence, session.lastAudioSequence) <= 0) return;
         session.lastAudioSequence = sequence;
 
         VoiceRoute speaker = manager.getRoute(session.uuid);
