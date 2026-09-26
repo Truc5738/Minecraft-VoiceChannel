@@ -55,6 +55,7 @@ public final class VoiceGateway {
     private final Map<String, SessionCredential> credentials = new ConcurrentHashMap<>();
     private final Map<UUID, String> credentialByPlayer = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
+    private final Object pairingLock = new Object();
 
     public VoiceGateway(JavaPlugin plugin, VoiceManager manager) {
         this.plugin = plugin;
@@ -89,6 +90,7 @@ public final class VoiceGateway {
         acceptThread.setDaemon(true);
         acceptThread.start();
         heartbeat.scheduleAtFixedRate(this::heartbeat, 5, 5, TimeUnit.SECONDS);
+        heartbeat.scheduleAtFixedRate(this::cleanupExpiredState, 30, 30, TimeUnit.SECONDS);
 
         plugin.getLogger().info("Voice gateway listening on TCP " + host + ":" + port + ".");
         plugin.getLogger().info("Gateway uses JVM networking only; no FFmpeg, JAVE2, glibc or native Linux binary is required.");
@@ -110,13 +112,18 @@ public final class VoiceGateway {
     }
 
     public String createPairCode(UUID uuid) {
-        String code;
-        do {
-            code = String.format(java.util.Locale.ROOT, "%06d", random.nextInt(1_000_000));
-        } while (pairings.containsKey(code));
-        pairings.entrySet().removeIf(e -> e.getValue().expiresAt < System.currentTimeMillis() || e.getValue().uuid.equals(uuid));
-        pairings.put(code, new Pairing(uuid, System.currentTimeMillis() + 120_000L));
-        return code;
+        if (uuid == null) throw new IllegalArgumentException("uuid");
+        synchronized (pairingLock) {
+            long now = System.currentTimeMillis();
+            pairings.entrySet().removeIf(e ->
+                    e.getValue().expiresAt < now || e.getValue().uuid.equals(uuid));
+            while (true) {
+                String code = String.format(java.util.Locale.ROOT, "%06d", random.nextInt(1_000_000));
+                if (pairings.putIfAbsent(code, new Pairing(uuid, now + 120_000L)) == null) {
+                    return code;
+                }
+            }
+        }
     }
 
     public int getConnectedClients() {
@@ -146,6 +153,17 @@ public final class VoiceGateway {
         boolean removed = sessions.remove(uuid, target);
         if (removed) manager.setConnected(uuid, false);
         target.close();
+    }
+
+    private void cleanupExpiredState() {
+        if (!running) return;
+        long now = System.currentTimeMillis();
+        pairings.entrySet().removeIf(e -> e.getValue().expiresAt < now);
+        credentials.entrySet().removeIf(e -> {
+            boolean expired = e.getValue().expiresAt < now;
+            if (expired) credentialByPlayer.remove(e.getValue().uuid, e.getKey());
+            return expired;
+        });
     }
 
     private void heartbeat() {
