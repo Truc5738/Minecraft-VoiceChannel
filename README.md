@@ -97,3 +97,16 @@ If the provider blocks custom inbound ports entirely, the gateway cannot accept 
 ## No-emoji rule
 
 Plugin UI, config, permissions and protocol messages intentionally avoid emoji characters.
+
+
+## Documentation / Wiki
+
+A polished project wiki is maintained in [docs/wiki](docs/wiki/Home.md).
+
+- [Wiki home](docs/wiki/Home.md)
+- [Installation](docs/wiki/Installation.md)
+- [Configuration](docs/wiki/Configuration.md)
+- [Clients](docs/wiki/Clients.md)
+- [Protocol](docs/wiki/Protocol.md)
+- [Architecture](docs/wiki/Architecture.md)
+- [Troubleshooting](docs/wiki/Troubleshooting.md)
