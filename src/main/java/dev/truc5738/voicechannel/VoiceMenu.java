@@ -320,51 +320,70 @@ public final class VoiceMenu implements Listener {
         openJava(player);
     }
 
-    private void openJavaChannels(Player player) {
-        Inventory inv = Bukkit.createInventory(null, 27, "Voice Channels");
-        int slot = 10;
+    private void openJavaChannels(Player player) { openJavaChannels(player, 0); }
+
+    private void openJavaChannels(Player player, int page) {
         List<String> channels = new ArrayList<>(manager.getPublicChannels());
         channels.sort(String.CASE_INSENSITIVE_ORDER);
-        for (String channel : channels) {
-            if (slot >= 17) break;
-            set(inv, slot++, channel, channel.equals(manager.getChannel(player)) ? "Current channel" : "Click to join");
+        int pages = Math.max(1, (channels.size() + 6) / 7);
+        int current = Math.max(0, Math.min(page, pages - 1));
+        Inventory inv = Bukkit.createInventory(null, 27, "Voice Channels " + (current + 1) + "/" + pages);
+        int start = current * 7;
+        for (int i = 0; i < 7 && start + i < channels.size(); i++) {
+            String channel = channels.get(start + i);
+            set(inv, 10 + i, channel, channel.equals(manager.getChannel(player)) ? "Current channel" : "Click to join");
         }
+        if (current > 0) set(inv, 18, "Previous", "Previous channel page");
         set(inv, 22, "Back", "Return to voice menu");
+        if (current + 1 < pages) set(inv, 26, "Next", "Next channel page");
         player.openInventory(inv);
     }
 
-    private void openJavaMutePlayers(Player player) {
-        Inventory inv = Bukkit.createInventory(null, 54, "Player Mute");
-        int slot = 0;
-        for (Player target : Bukkit.getOnlinePlayers()) {
-            if (target.equals(player) || slot >= 45) continue;
-            set(inv, slot++, target.getName(), manager.isMuted(player, target) ? "Muted: click to unmute" : "Click to mute");
+    private void openJavaMutePlayers(Player player) { openJavaMutePlayers(player, 0); }
+
+    private void openJavaMutePlayers(Player player, int page) {
+        List<Player> targets = new ArrayList<>();
+        for (Player target : Bukkit.getOnlinePlayers()) if (!target.equals(player)) targets.add(target);
+        targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
+        int pages = Math.max(1, (targets.size() + 44) / 45);
+        int current = Math.max(0, Math.min(page, pages - 1));
+        Inventory inv = Bukkit.createInventory(null, 54, "Player Mute " + (current + 1) + "/" + pages);
+        int start = current * 45;
+        for (int i = 0; i < 45 && start + i < targets.size(); i++) {
+            Player target = targets.get(start + i);
+            set(inv, i, target.getName(), manager.isMuted(player, target) ? "Muted: click to unmute" : "Click to mute");
         }
+        if (current > 0) set(inv, 45, "Previous", "Previous player page");
         set(inv, 49, "Back", "Return to voice menu");
+        if (current + 1 < pages) set(inv, 53, "Next", "Next player page");
         player.openInventory(inv);
     }
 
-    private void openJavaModeration(Player player) {
+    private void openJavaModeration(Player player) { openJavaModeration(player, 0); }
+
+    private void openJavaModeration(Player player, int page) {
         if (!player.hasPermission("voicechannel.admin")) {
             player.sendMessage(ChatColor.RED + "You do not have permission.");
             return;
         }
-
-        Inventory inv = Bukkit.createInventory(null, 54, "Channel Moderation");
         String currentChannel = manager.getChannel(player);
         List<Player> targets = new ArrayList<>();
         for (Player target : Bukkit.getOnlinePlayers()) {
             if (!target.equals(player) && manager.isMemberOfChannel(currentChannel, target.getUniqueId())) targets.add(target);
         }
         targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
-
-        int slot = 0;
-        for (Player target : targets) {
-            if (slot >= 45) break;
-            set(inv, slot++, target.getName(), "Channel: " + currentChannel
+        int pages = Math.max(1, (targets.size() + 44) / 45);
+        int current = Math.max(0, Math.min(page, pages - 1));
+        Inventory inv = Bukkit.createInventory(null, 54, "Channel Moderation " + (current + 1) + "/" + pages);
+        int start = current * 45;
+        for (int i = 0; i < 45 && start + i < targets.size(); i++) {
+            Player target = targets.get(start + i);
+            set(inv, i, target.getName(), "Channel: " + currentChannel
                     + " | Left click: mute | Right click: move to default");
         }
+        if (current > 0) set(inv, 45, "Previous", "Previous player page");
         set(inv, 49, "Back", "Return to voice menu");
+        if (current + 1 < pages) set(inv, 53, "Next", "Next player page");
         player.openInventory(inv);
     }
 
@@ -372,33 +391,39 @@ public final class VoiceMenu implements Listener {
     public void onSubMenuClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         String title = event.getView().getTitle();
-        if (!title.equals("Voice Channels") && !title.equals("Player Mute")) return;
+        if (!title.startsWith("Voice Channels") && !title.startsWith("Player Mute")) return;
         event.setCancelled(true);
         int slot = event.getRawSlot();
-        if (slot == 22 || slot == 49) {
-            openJava(player);
-            return;
-        }
-
-        if (title.equals("Voice Channels") && slot >= 10 && slot < 17) {
-            List<String> channels = new ArrayList<>(manager.getPublicChannels());
-            channels.sort(String.CASE_INSENSITIVE_ORDER);
-            int index = slot - 10;
-            if (index < channels.size() && manager.joinChannel(player, channels.get(index))) {
-                player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channels.get(index));
+        if (title.startsWith("Voice Channels")) {
+            int page = parsePage(title);
+            if (slot == 22) { openJava(player); return; }
+            if (slot == 18) { openJavaChannels(player, page - 1); return; }
+            if (slot == 26) { openJavaChannels(player, page + 1); return; }
+            if (slot >= 10 && slot < 17) {
+                List<String> channels = new ArrayList<>(manager.getPublicChannels());
+                channels.sort(String.CASE_INSENSITIVE_ORDER);
+                int index = page * 7 + (slot - 10);
+                if (index < channels.size() && manager.joinChannel(player, channels.get(index))) {
+                    player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channels.get(index));
+                }
+                openJava(player);
             }
-            openJava(player);
             return;
         }
-
-        if (title.equals("Player Mute") && slot >= 0 && slot < 45) {
+        int page = parsePage(title);
+        if (slot == 49) { openJava(player); return; }
+        if (slot == 45) { openJavaMutePlayers(player, page - 1); return; }
+        if (slot == 53) { openJavaMutePlayers(player, page + 1); return; }
+        if (slot >= 0 && slot < 45) {
             List<Player> targets = new ArrayList<>();
             for (Player target : Bukkit.getOnlinePlayers()) if (!target.equals(player)) targets.add(target);
-            if (slot < targets.size()) {
-                Player target = targets.get(slot);
+            targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
+            int index = page * 45 + slot;
+            if (index < targets.size()) {
+                Player target = targets.get(index);
                 manager.toggleMute(player, target);
                 player.sendMessage(ChatColor.GREEN + (manager.isMuted(player, target) ? "Player muted." : "Player unmuted."));
-                openJavaMutePlayers(player);
+                openJavaMutePlayers(player, page);
             }
         }
     }
@@ -406,14 +431,16 @@ public final class VoiceMenu implements Listener {
     @EventHandler
     public void onModerationClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
-        if (!event.getView().getTitle().equals("Channel Moderation")) return;
+        String title = event.getView().getTitle();
+        if (!title.startsWith("Channel Moderation")) return;
         event.setCancelled(true);
         int slot = event.getRawSlot();
-        if (slot == 49) {
-            openJava(player);
-            return;
-        }
-        if (!player.hasPermission("voicechannel.admin") || slot < 0 || slot >= 45) return;
+        if (slot == 49) { openJava(player); return; }
+        if (!player.hasPermission("voicechannel.admin")) return;
+        int page = parsePage(title);
+        if (slot == 45) { openJavaModeration(player, page - 1); return; }
+        if (slot == 53) { openJavaModeration(player, page + 1); return; }
+        if (slot < 0 || slot >= 45) return;
 
         String currentChannel = manager.getChannel(player);
         List<Player> targets = new ArrayList<>();
@@ -421,9 +448,10 @@ public final class VoiceMenu implements Listener {
             if (!target.equals(player) && manager.isMemberOfChannel(currentChannel, target.getUniqueId())) targets.add(target);
         }
         targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
-        if (slot >= targets.size()) return;
+        int index = page * 45 + slot;
+        if (index >= targets.size()) return;
 
-        Player target = targets.get(slot);
+        Player target = targets.get(index);
         String channel = manager.getChannel(player);
         if (event.isRightClick()) {
             if (manager.kickFromChannel(channel, target.getUniqueId())) {
@@ -436,6 +464,17 @@ public final class VoiceMenu implements Listener {
         }
         openJavaModeration(player);
     }
+    private int parsePage(String title) {
+        int slash = title.lastIndexOf('/');
+        int space = title.lastIndexOf(' ');
+        if (slash < 0 || space < 0 || slash <= space) return 0;
+        try {
+            return Math.max(0, Integer.parseInt(title.substring(space + 1, slash)) - 1);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
     private void sendPairCode(Player player) {
         if (plugin instanceof VoiceChannelPlugin vp && vp.getVoiceGateway() != null && vp.getVoiceGateway().isRunning()) {
             String code = vp.getVoiceGateway().createPairCode(player.getUniqueId());
