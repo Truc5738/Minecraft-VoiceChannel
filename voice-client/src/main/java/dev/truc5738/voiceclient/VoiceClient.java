@@ -75,8 +75,12 @@ public final class VoiceClient {
             System.out.println("Connected. Microphone is active. Press Enter to stop.");
             System.in.read();
 
-            stop(running, socket, mic, speaker);
-            sendGoodbye(out, voiceUuid);
+            if (running.compareAndSet(true, false)) {
+                sendGoodbye(out, voiceUuid);
+                try { mic.stop(); } catch (Exception ignored) {}
+                try { speaker.stop(); } catch (Exception ignored) {}
+                try { socket.close(); } catch (IOException ignored) {}
+            }
             receiver.interrupt();
             capture.interrupt();
         }
@@ -132,14 +136,6 @@ public final class VoiceClient {
             try { speaker.stop(); } catch (Exception ignored) {}
             try { speaker.flush(); } catch (Exception ignored) {}
         }
-    }
-
-    private static void stop(AtomicBoolean running, Socket socket,
-                             TargetDataLine mic, SourceDataLine speaker) {
-        if (!running.compareAndSet(true, false)) return;
-        try { mic.stop(); } catch (Exception ignored) {}
-        try { speaker.stop(); } catch (Exception ignored) {}
-        try { socket.close(); } catch (IOException ignored) {}
     }
 
     private static void sendGoodbye(DataOutputStream out, UUID uuid) {
