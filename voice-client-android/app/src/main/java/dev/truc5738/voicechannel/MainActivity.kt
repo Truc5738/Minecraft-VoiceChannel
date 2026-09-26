@@ -243,11 +243,8 @@ class MainActivity : Activity() {
             } catch (_: Exception) {
             } finally {
                 connectionRunning.set(false)
-                try { recorder.stop() } catch (_: Exception) {}
-                try { recorder.release() } catch (_: Exception) {}
                 try { track.stop() } catch (_: Exception) {}
                 try { track.release() } catch (_: Exception) {}
-                try { s.close() } catch (_: Exception) {}
             }
         }.also { it.isDaemon = true }
 
