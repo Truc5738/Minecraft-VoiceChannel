@@ -204,12 +204,15 @@ public final class VoiceMenu implements Listener {
             player.sendMessage(ChatColor.RED + "You do not have permission.");
             return;
         }
+        String channel = manager.getChannel(player);
         List<Player> targets = new ArrayList<>();
-        for (Player target : Bukkit.getOnlinePlayers()) if (!target.equals(player)) targets.add(target);
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (!target.equals(player) && manager.isMemberOfChannel(channel, target.getUniqueId())) targets.add(target);
+        }
         targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
         SimpleForm.Builder form = SimpleForm.builder()
                 .title("Channel Moderation")
-                .content("Select a player.");
+                .content("Channel: " + manager.getChannel(player) + "\nSelect a member to moderate.");
         for (Player target : targets) form.button(target.getName());
         form.button("Back");
         form.validResultHandler(result -> {
@@ -237,8 +240,16 @@ public final class VoiceMenu implements Listener {
                 .button("Back")
                 .validResultHandler(result -> {
                     switch (result.clickedButtonId()) {
-                        case 0 -> manager.toggleChannelMute(manager.getChannel(player), target.getUniqueId());
-                        case 1 -> manager.kickFromChannel(manager.getChannel(player), target.getUniqueId());
+                        case 0 -> {
+                            if (manager.toggleChannelMute(manager.getChannel(player), target.getUniqueId())) {
+                                player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
+                            }
+                        }
+                        case 1 -> {
+                            if (!manager.kickFromChannel(manager.getChannel(player), target.getUniqueId())) {
+                                player.sendMessage(ChatColor.RED + "Player is no longer in your channel.");
+                            }
+                        }
                         default -> {
                         }
                     }
@@ -340,18 +351,17 @@ public final class VoiceMenu implements Listener {
         }
 
         Inventory inv = Bukkit.createInventory(null, 54, "Channel Moderation");
+        String currentChannel = manager.getChannel(player);
         List<Player> targets = new ArrayList<>();
         for (Player target : Bukkit.getOnlinePlayers()) {
-            if (!target.equals(player)) targets.add(target);
+            if (!target.equals(player) && manager.isMemberOfChannel(currentChannel, target.getUniqueId())) targets.add(target);
         }
         targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
 
         int slot = 0;
         for (Player target : targets) {
             if (slot >= 45) break;
-            String channel = manager.getChannel(target);
-            String status = channel.equals(manager.getChannel(player)) ? "Current channel" : "Other channel";
-            set(inv, slot++, target.getName(), "Channel: " + channel + " | " + status
+            set(inv, slot++, target.getName(), "Channel: " + currentChannel
                     + " | Left click: mute | Right click: move to default");
         }
         set(inv, 49, "Back", "Return to voice menu");
@@ -405,8 +415,12 @@ public final class VoiceMenu implements Listener {
         }
         if (!player.hasPermission("voicechannel.admin") || slot < 0 || slot >= 45) return;
 
+        String currentChannel = manager.getChannel(player);
         List<Player> targets = new ArrayList<>();
-        for (Player target : Bukkit.getOnlinePlayers()) if (!target.equals(player)) targets.add(target);
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (!target.equals(player) && manager.isMemberOfChannel(currentChannel, target.getUniqueId())) targets.add(target);
+        }
+        targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
         if (slot >= targets.size()) return;
 
         Player target = targets.get(slot);
@@ -416,8 +430,9 @@ public final class VoiceMenu implements Listener {
                 player.sendMessage(ChatColor.YELLOW + "Player moved to the default voice channel: " + target.getName());
             }
         } else {
-            manager.toggleChannelMute(channel, target.getUniqueId());
-            player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
+            if (manager.toggleChannelMute(channel, target.getUniqueId())) {
+                player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
+            }
         }
         openJavaModeration(player);
     }
