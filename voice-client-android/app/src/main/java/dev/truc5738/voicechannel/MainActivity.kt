@@ -174,9 +174,9 @@ class MainActivity : Activity() {
             .setBufferSizeInBytes(maxOf(trackMin, frameBytes * 4)).build()
 
         Thread {
-            var lastAudioSequence = 0
-            var haveAudioSequence = false
+            val lastAudioSequences = HashMap<UUID, Int>()
             try {
+                if (track.state != AudioTrack.STATE_INITIALIZED) throw IOException("Speaker initialization failed")
                 track.play()
                 while (running) {
                     val header = ByteArray(29)
@@ -194,17 +194,21 @@ class MainActivity : Activity() {
                     when (type.toInt()) {
                         2 -> {
                             if (len != frameBytes) break
-                            if (UUID(msb, lsb) == id) continue
-                            if (haveAudioSequence && Integer.compareUnsigned(seq, lastAudioSequence) <= 0) continue
-                            lastAudioSequence = seq
-                            haveAudioSequence = true
+                            val sender = UUID(msb, lsb)
+                            if (sender == id) continue
+                            val last = lastAudioSequences[sender]
+                            if (last != null && Integer.compareUnsigned(seq, last) <= 0) continue
+                            lastAudioSequences[sender] = seq
                             track.write(data, 0, frameBytes)
                         }
                         4 -> {
                             if (len != 0) break
                             send(output, pongType, id, seq, ByteArray(0))
                         }
-                        3 -> break
+                        3 -> {
+                            if (len != 0) break
+                            break
+                        }
                         5 -> {
                             if (len != 0) break
                         }
