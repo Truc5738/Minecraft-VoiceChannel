@@ -86,7 +86,7 @@ class MainActivity : Activity() {
 
                         val connectionRunning = AtomicBoolean(true)
                         try {
-                            runVoice(s, credential, pairCode, connectionRunning)
+                            runVoice(s, credential, pair, connectionRunning)
                         } catch (ex: Exception) {
                             if (sessionToken != null && ex.message == "SESSION_REJECTED") {
                                 sessionToken = null
@@ -132,7 +132,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun runVoice(s: Socket, token: String, pairCode: String, connectionRunning: AtomicBoolean) {
+    private fun runVoice(s: Socket, token: String, pair: EditText, connectionRunning: AtomicBoolean) {
         val input = DataInputStream(BufferedInputStream(s.getInputStream()))
         val output = DataOutputStream(BufferedOutputStream(s.getOutputStream()))
         var id = UUID(0L, 0L)
@@ -164,7 +164,7 @@ class MainActivity : Activity() {
             ?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
                 sessionToken = it
                 getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
-                if (token.startsWith("PAIR:")) runOnUiThread { pairCode /* pairing code is already snapshotted */ }
+                if (token.startsWith("PAIR:")) runOnUiThread { pair.setText("") }
             }
         id = UUID(assignedMsb, assignedLsb)
         runOnUiThread { statusView?.text = "Connected" }
