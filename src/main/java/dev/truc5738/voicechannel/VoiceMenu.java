@@ -333,8 +333,11 @@ public final class VoiceMenu implements Listener {
                 .validResultHandler(result -> {
                     switch (result.clickedButtonId()) {
                         case 0 -> {
-                            if (target.isOnline() && manager.isMemberOfChannel(channel, target.getUniqueId())) {
-                                if (manager.toggleChannelMute(channel, target.getUniqueId())) {
+                            String currentChannel = manager.getChannel(player);
+                            if (!currentChannel.equals(channel)) {
+                                player.sendMessage(ChatColor.RED + "Your voice channel changed. Reopen moderation.");
+                            } else if (target.isOnline() && manager.isMemberOfChannel(currentChannel, target.getUniqueId())) {
+                                if (manager.toggleChannelMute(currentChannel, target.getUniqueId())) {
                                     player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
                                 }
                             } else {
@@ -342,8 +345,11 @@ public final class VoiceMenu implements Listener {
                             }
                         }
                         case 1 -> {
-                            if (!target.isOnline() || !manager.isMemberOfChannel(channel, target.getUniqueId())
-                                    || !manager.kickFromChannel(channel, target.getUniqueId())) {
+                            String currentChannel = manager.getChannel(player);
+                            if (!currentChannel.equals(channel)) {
+                                player.sendMessage(ChatColor.RED + "Your voice channel changed. Reopen moderation.");
+                            } else if (!target.isOnline() || !manager.isMemberOfChannel(currentChannel, target.getUniqueId())
+                                    || !manager.kickFromChannel(currentChannel, target.getUniqueId())) {
                                 player.sendMessage(ChatColor.RED + "Player is no longer in your channel.");
                             }
                         }
