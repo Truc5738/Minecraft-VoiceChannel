@@ -34,12 +34,33 @@ public final class VoiceManager {
 
     private void loadConfiguredChannels() {
         String configured = plugin.getConfig().getString("voice.default-channel", "General");
-        channelMembers.putIfAbsent(configured, ConcurrentHashMap.newKeySet());
+        if (configured == null || configured.isBlank()) configured = "General";
+
+        channelMembers.putIfAbsent(configured.trim(), ConcurrentHashMap.newKeySet());
         if (plugin.getConfig().getConfigurationSection("channels") != null) {
             for (String name : plugin.getConfig().getConfigurationSection("channels").getKeys(false)) {
-                channelMembers.putIfAbsent(name, ConcurrentHashMap.newKeySet());
+                if (name != null && !name.isBlank()) {
+                    channelMembers.putIfAbsent(name.trim(), ConcurrentHashMap.newKeySet());
+                }
             }
         }
+
+        // The default channel must always be joinable by the normal leave/reset flow.
+        if (privateOwners.containsKey(configured.trim())) {
+            privateOwners.remove(configured.trim());
+            privatePasswords.remove(configured.trim());
+        }
+    }
+
+    private String defaultChannel() {
+        String configured = plugin.getConfig().getString("voice.default-channel", "General");
+        if (configured == null || configured.isBlank()) return "General";
+        String target = configured.trim();
+        if (!channelMembers.containsKey(target) || isPrivateChannel(target)) {
+            channelMembers.putIfAbsent("General", ConcurrentHashMap.newKeySet());
+            return "General";
+        }
+        return target;
     }
 
     public Set<String> getChannels() {
@@ -73,17 +94,27 @@ public final class VoiceManager {
     }
 
     public boolean createPrivateChannel(Player owner, String name, String password) {
-        if (name == null || name.isBlank() || password == null) return false;
+        if (name == null || name.isBlank() || password == null || password.isBlank()) return false;
         String target = name.trim();
         if (target.length() > 24 || target.contains(" ") || channelMembers.containsKey(target) || privateOwners.containsKey(target)) return false;
-        privateOwners.put(target, owner.getUniqueId());
+
+        if (channelMembers.putIfAbsent(target, ConcurrentHashMap.newKeySet()) != null) return false;
+        if (privateOwners.putIfAbsent(target, owner.getUniqueId()) != null) {
+            channelMembers.remove(target);
+            return false;
+        }
         privatePasswords.put(target, password);
-        channelMembers.put(target, ConcurrentHashMap.newKeySet());
-        return joinPrivateChannel(owner, target, password);
+        if (!joinPrivateChannel(owner, target, password)) {
+            privateOwners.remove(target, owner.getUniqueId());
+            privatePasswords.remove(target);
+            channelMembers.remove(target);
+            return false;
+        }
+        return true;
     }
 
     public boolean joinPrivateChannel(Player player, String name, String password) {
-        if (name == null || password == null) return false;
+        if (name == null || password == null || password.isBlank()) return false;
         String target = name.trim();
         if (!privateOwners.containsKey(target)) return false;
         if (!java.util.Objects.equals(privatePasswords.get(target), password)) return false;
@@ -126,24 +157,22 @@ public final class VoiceManager {
     }
 
     public String getChannel(UUID uuid) {
-        String channel = channels.computeIfAbsent(uuid, ignored ->
-                plugin.getConfig().getString("voice.default-channel", "General"));
+        String channel = channels.computeIfAbsent(uuid, ignored -> defaultChannel());
+        if (!channelMembers.containsKey(channel) || (isPrivateChannel(channel) && !privateOwners.containsKey(channel))) {
+            channel = defaultChannel();
+            channels.put(uuid, channel);
+        }
         channelMembers.computeIfAbsent(channel, ignored -> ConcurrentHashMap.newKeySet()).add(uuid);
         return channel;
     }
 
     public void joinChannelLegacy(Player player, String channel) {
         if (channel == null || channel.isBlank()) return;
-        String target = channel.trim();
-        if (isPrivateChannel(target)) return;
-        channels.put(player.getUniqueId(), target);
-        channelMembers.computeIfAbsent(target, ignored -> ConcurrentHashMap.newKeySet()).add(player.getUniqueId());
-        refreshRoute(player);
+        joinChannel(player, channel);
     }
 
     public void joinDefaultChannel(Player player) {
-        String defaultChannel = plugin.getConfig().getString("voice.default-channel", "General");
-        joinChannel(player, defaultChannel);
+        joinChannel(player, defaultChannel());
     }
 
     public void leaveChannel(Player player) {
@@ -193,8 +222,9 @@ public final class VoiceManager {
     }
 
     public double getVolume(UUID uuid) {
-        return playerVolumes.getOrDefault(uuid,
-                plugin.getConfig().getDouble("voice.default-volume", 1.0));
+        double configured = plugin.getConfig().getDouble("voice.default-volume", 1.0);
+        configured = Math.max(0.0, Math.min(2.0, configured));
+        return playerVolumes.getOrDefault(uuid, configured);
     }
 
     public void setVolume(Player player, double volume) {
@@ -202,12 +232,13 @@ public final class VoiceManager {
     }
 
     public double getRange(Player player) {
-        return ranges.getOrDefault(player.getUniqueId(),
-                plugin.getConfig().getDouble("voice.default-range", 32.0));
+        double configured = plugin.getConfig().getDouble("voice.default-range", 32.0);
+        double max = Math.max(4.0, plugin.getConfig().getDouble("voice.max-range", 96.0));
+        return Math.max(4.0, Math.min(max, configured));
     }
 
     public void setRange(Player player, double range) {
-        double max = plugin.getConfig().getDouble("voice.max-range", 96.0);
+        double max = Math.max(4.0, plugin.getConfig().getDouble("voice.max-range", 96.0));
         ranges.put(player.getUniqueId(), Math.max(4.0, Math.min(max, range)));
         refreshRoute(player);
     }
