@@ -25,7 +25,7 @@ class MainActivity : Activity() {
     private val magic = 0x4D564331
     private val pongType = 5
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override fun onDestroy() {\n        wantConnection = false\n        connectionThread?.interrupt()\n        val current = socket\n        socket = null\n        try { current?.close() } catch (_: Exception) {}\n        connectionThread = null\n        super.onDestroy()\n    }\n\n    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val host = EditText(this).apply { hint = "Gateway host" }
         val port = EditText(this).apply { hint = "26467"; setText("26467") }
@@ -263,7 +263,7 @@ class MainActivity : Activity() {
             try { recorder.release() } catch (_: Exception) {}
             try { send(output, 3, id, 0, ByteArray(0)) } catch (_: Exception) {}
             try { s.close() } catch (_: Exception) {}
-            receiver.join(1000)
+            receiver.join(1000)\n            if (receiver.isAlive) {\n                try { s.close() } catch (_: Exception) {}\n                receiver.join(500)\n            }
         }
     }
 
