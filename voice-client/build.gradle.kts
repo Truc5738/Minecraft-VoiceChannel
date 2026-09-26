@@ -19,3 +19,15 @@ tasks.jar {
     archiveBaseName.set("Minecraft-VoiceChannel-VoiceClient")
     manifest.attributes["Main-Class"] = application.mainClass.get()
 }
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation("org.junit.jupiter:junit-jupiter:6.0.0")
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
