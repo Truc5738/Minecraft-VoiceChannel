@@ -85,7 +85,7 @@ class MainActivity : Activity() {
                         s.connect(java.net.InetSocketAddress(hostValue, portValue), 5000)
                         s.tcpNoDelay = true
                         s.keepAlive = true
-                        s.soTimeout = 35000
+                        s.soTimeout = 20000
                         socket = s
 
                         val usePairing = pairCode.matches(Regex("\\d{6}"))
