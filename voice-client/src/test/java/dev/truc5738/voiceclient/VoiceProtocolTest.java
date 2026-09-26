@@ -52,7 +52,7 @@ class VoiceProtocolTest {
         assertTrue(Integer.compareUnsigned(1, 0) > 0);
         assertTrue(Integer.compareUnsigned(0, Integer.MAX_VALUE) < 0);
         assertTrue(Integer.compareUnsigned(Integer.MIN_VALUE, Integer.MAX_VALUE) > 0);
-        assertTrue(Integer.compareUnsigned(0, -1) > 0);
+        assertTrue(Integer.compareUnsigned(0, -1) < 0);
 
         assertFalse(Integer.compareUnsigned(0, 0) > 0);
         assertFalse(Integer.compareUnsigned(0, 1) > 0);
