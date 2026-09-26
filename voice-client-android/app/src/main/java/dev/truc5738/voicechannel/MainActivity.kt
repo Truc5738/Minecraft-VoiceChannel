@@ -164,7 +164,7 @@ class MainActivity : Activity() {
             ?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
                 sessionToken = it
                 getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
-                if (token.startsWith("PAIR:")) runOnUiThread { statusView?.let { _ -> } }
+                if (token.startsWith("PAIR:")) runOnUiThread { pairCode /* pairing code is already snapshotted */ }
             }
         id = UUID(assignedMsb, assignedLsb)
         runOnUiThread { statusView?.text = "Connected" }
