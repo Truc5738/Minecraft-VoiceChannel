@@ -26,11 +26,13 @@ public final class VoiceMenu implements Listener {
     private final JavaPlugin plugin;
     private final VoiceManager manager;
     private final org.bukkit.NamespacedKey playerTargetKey;
+    private final org.bukkit.NamespacedKey channelTargetKey;
 
     public VoiceMenu(JavaPlugin plugin, VoiceManager manager) {
         this.plugin = plugin;
         this.manager = manager;
         this.playerTargetKey = new org.bukkit.NamespacedKey(plugin, "voice-target");
+        this.channelTargetKey = new org.bukkit.NamespacedKey(plugin, "voice-channel-target");
     }
 
     public void open(Player player) {
@@ -434,7 +436,7 @@ public final class VoiceMenu implements Listener {
         int start = current * 7;
         for (int i = 0; i < 7 && start + i < channels.size(); i++) {
             String channel = channels.get(start + i);
-            set(inv, 10 + i, channel, channel.equals(manager.getChannel(player)) ? "Current channel" : "Click to join");
+            setChannelTarget(inv, 10 + i, channel, channel.equals(manager.getChannel(player)) ? "Current channel" : "Click to join");
         }
         if (current > 0) set(inv, 18, "Previous", "Previous channel page");
         set(inv, 22, "Back", "Return to voice menu");
@@ -503,11 +505,14 @@ public final class VoiceMenu implements Listener {
             if (slot == 18) { openJavaChannels(player, page - 1); return; }
             if (slot == 26) { openJavaChannels(player, page + 1); return; }
             if (slot >= 10 && slot < 17) {
-                List<String> channels = new ArrayList<>(manager.getPublicChannels());
-                channels.sort(String.CASE_INSENSITIVE_ORDER);
-                int index = page * 7 + (slot - 10);
-                if (index < channels.size() && manager.joinChannel(player, channels.get(index))) {
-                    player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channels.get(index));
+                String channel = getChannelTarget(event.getCurrentItem());
+                if (channel == null || !manager.getPublicChannels().contains(channel)) {
+                    player.sendMessage(ChatColor.RED + "Voice channel is no longer available.");
+                    openJavaChannels(player, page);
+                    return;
+                }
+                if (manager.joinChannel(player, channel)) {
+                    player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channel);
                 }
                 openJava(player);
             }
@@ -594,6 +599,21 @@ public final class VoiceMenu implements Listener {
         meta.getPersistentDataContainer().set(playerTargetKey, PersistentDataType.STRING, target.getUniqueId().toString());
         item.setItemMeta(meta);
         inventory.setItem(slot, item);
+    }
+
+    private void setChannelTarget(Inventory inventory, int slot, String channel, String lore) {
+        ItemStack item = new ItemStack(Material.PAPER);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text(channel, net.kyori.adventure.text.format.NamedTextColor.WHITE));
+        meta.lore(List.of(Component.text(lore, net.kyori.adventure.text.format.NamedTextColor.GRAY)));
+        meta.getPersistentDataContainer().set(channelTargetKey, PersistentDataType.STRING, channel);
+        item.setItemMeta(meta);
+        inventory.setItem(slot, item);
+    }
+
+    private String getChannelTarget(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return null;
+        return item.getItemMeta().getPersistentDataContainer().get(channelTargetKey, PersistentDataType.STRING);
     }
 
     private Player getPlayerTarget(ItemStack item) {
