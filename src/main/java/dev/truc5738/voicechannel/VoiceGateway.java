@@ -97,10 +97,7 @@ public final class VoiceGateway {
     public void stop() {
         running = false;
         if (serverSocket != null) {
-            try {
-                serverSocket.close();
-            } catch (IOException ignored) {
-            }
+            try { serverSocket.close(); } catch (IOException ignored) {}
         }
         for (Session session : new ArrayList<>(sessions.values())) session.close();
         sessions.clear();
@@ -137,20 +134,15 @@ public final class VoiceGateway {
     }
 
     public void disconnect(UUID uuid) {
-        Session session = sessions.remove(uuid);
-        if (session != null) {
-            session.close();
-            if (!sessions.containsKey(uuid)) manager.setConnected(uuid, false);
-        }
+        Session session = sessions.get(uuid);
+        if (session != null) removeSession(session);
     }
 
     private void removeSession(Session target) {
         if (target == null || target.uuid == null) return;
         UUID uuid = target.uuid;
         boolean removed = sessions.remove(uuid, target);
-        if (removed && !sessions.containsKey(uuid)) {
-            manager.setConnected(uuid, false);
-        }
+        if (removed) manager.setConnected(uuid, false);
         target.close();
     }
 
@@ -223,12 +215,7 @@ public final class VoiceGateway {
         } catch (IOException exception) {
             if (running) plugin.getLogger().fine("Voice client disconnected: " + exception.getMessage());
         } finally {
-            if (session.uuid != null) {
-                boolean removed = sessions.remove(session.uuid, session);
-                if (removed && !sessions.containsKey(session.uuid)) {
-                    manager.setConnected(session.uuid, false);
-                }
-            }
+            removeSession(session);
         }
     }
 
@@ -248,18 +235,21 @@ public final class VoiceGateway {
         boolean validToken = MessageDigest.isEqual(
                 credential.getBytes(StandardCharsets.UTF_8),
                 token.getBytes(StandardCharsets.UTF_8));
+
         UUID uuid = presentedUuid;
         boolean validPair = false;
         if (credential.startsWith("PAIR:")) {
             String code = credential.substring(5);
             Pairing pairing = pairings.get(code);
-            boolean uuidOmitted = presentedUuid.getMostSignificantBits() == 0L && presentedUuid.getLeastSignificantBits() == 0L;
+            boolean uuidOmitted = presentedUuid.getMostSignificantBits() == 0L
+                    && presentedUuid.getLeastSignificantBits() == 0L;
             if (pairing != null && pairing.expiresAt >= System.currentTimeMillis()
                     && (uuidOmitted || pairing.uuid.equals(presentedUuid))) {
                 validPair = pairings.remove(code, pairing);
                 if (validPair) uuid = pairing.uuid;
             }
         }
+
         boolean validSession = false;
         if (credential.startsWith("SESSION:")) {
             String sessionToken = credential.substring("SESSION:".length());
@@ -271,6 +261,7 @@ public final class VoiceGateway {
                 credentials.remove(sessionToken, stored);
             }
         }
+
         if (!validToken && !validPair && !validSession) {
             sendHelloError(session, "AUTH");
             return false;
@@ -283,7 +274,9 @@ public final class VoiceGateway {
         }
 
         Session previous = sessions.put(uuid, session);
-        if (previous != null && previous != session) previous.close();
+        if (previous != null && previous != session) {
+            previous.close();
+        }
 
         session.uuid = uuid;
         manager.setConnected(uuid, true);
@@ -296,15 +289,12 @@ public final class VoiceGateway {
         try {
             session.send(HELLO, new UUID(0L, 0L), 0,
                     ("ERROR:" + reason).getBytes(StandardCharsets.UTF_8));
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
     }
 
     private void handleAudio(Session session, int sequence, byte[] payload) {
         if (sessions.get(session.uuid) != session) return;
         if (!manager.isConnected(session.uuid) || manager.isMicMuted(session.uuid)) return;
-
-        // The protocol uses fixed 20 ms PCM16 mono frames: 320 samples x 2 bytes = 640 bytes.
         if (payload.length != 640) return;
         if (sequence < 0 || (session.lastAudioSequence >= 0 && sequence <= session.lastAudioSequence)) return;
         session.lastAudioSequence = sequence;
@@ -400,7 +390,6 @@ public final class VoiceGateway {
 
         private synchronized void send(byte type, UUID sender, int sequence, byte[] payload) throws IOException {
             if (output == null) throw new IOException("Voice session is not ready.");
-
             output.writeInt(MAGIC);
             output.writeByte(type);
             output.writeLong(sender.getMostSignificantBits());
@@ -412,10 +401,7 @@ public final class VoiceGateway {
         }
 
         private void close() {
-            try {
-                socket.close();
-            } catch (IOException ignored) {
-            }
+            try { socket.close(); } catch (IOException ignored) {}
         }
     }
 }
