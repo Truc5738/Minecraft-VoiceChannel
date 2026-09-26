@@ -15,6 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
@@ -336,7 +338,7 @@ public final class VoiceGateway {
             try {
                 double volume = manager.getVolume(recipient.uuid);
                 byte[] audio = applyVolume(payload, volume);
-                recipient.send(AUDIO, session.uuid, sequence, audio);
+                recipient.enqueueAudio(session.uuid, sequence, audio);
             } catch (IOException exception) {
                 removeSession(recipient);
             }
@@ -409,16 +411,52 @@ public final class VoiceGateway {
     }
 
     private static final class Session {
+        private static final int AUDIO_QUEUE_CAPACITY = 64;
+
         private final Socket socket;
+        private final BlockingQueue<AudioFrame> audioQueue = new ArrayBlockingQueue<>(AUDIO_QUEUE_CAPACITY);
         private DataInputStream input;
         private DataOutputStream output;
         private UUID uuid;
         private volatile long lastPongAt = System.currentTimeMillis();
         private int heartbeatSequence;
         private int lastAudioSequence = -1;
+        private volatile boolean audioWriterRunning;
+        private Thread audioWriter;
 
         private Session(Socket socket) {
             this.socket = socket;
+        }
+
+        private void startAudioWriter() {
+            if (audioWriterRunning) return;
+            audioWriterRunning = true;
+            audioWriter = new Thread(() -> {
+                try {
+                    while (audioWriterRunning && !socket.isClosed()) {
+                        AudioFrame frame = audioQueue.take();
+                        send(AUDIO, frame.sender, frame.sequence, frame.payload);
+                    }
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                } catch (IOException exception) {
+                    if (audioWriterRunning) close();
+                } finally {
+                    audioWriterRunning = false;
+                    audioQueue.clear();
+                }
+            }, "Minecraft-VoiceChannel-AudioWriter");
+            audioWriter.setDaemon(true);
+            audioWriter.start();
+        }
+
+        private void enqueueAudio(UUID sender, int sequence, byte[] payload) {
+            if (!audioWriterRunning || socket.isClosed()) return;
+            AudioFrame frame = new AudioFrame(sender, sequence, payload);
+            if (!audioQueue.offer(frame)) {
+                audioQueue.poll();
+                audioQueue.offer(frame);
+            }
         }
 
         private synchronized void send(byte type, UUID sender, int sequence, byte[] payload) throws IOException {
@@ -434,7 +472,22 @@ public final class VoiceGateway {
         }
 
         private void close() {
+            audioWriterRunning = false;
+            if (audioWriter != null) audioWriter.interrupt();
+            audioQueue.clear();
             try { socket.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    private static final class AudioFrame {
+        private final UUID sender;
+        private final int sequence;
+        private final byte[] payload;
+
+        private AudioFrame(UUID sender, int sequence, byte[] payload) {
+            this.sender = sender;
+            this.sequence = sequence;
+            this.payload = payload;
         }
     }
 }
