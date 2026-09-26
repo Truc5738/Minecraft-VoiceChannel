@@ -135,14 +135,26 @@ public final class VoiceManager {
         return channelMuted.getOrDefault(channel, Collections.emptySet()).contains(speaker);
     }
 
-    public void toggleChannelMute(String channel, UUID speaker) {
+    public boolean isMemberOfChannel(String channel, UUID player) {
+        if (channel == null || player == null) return false;
+        return channelMembers.getOrDefault(channel.trim(), Collections.emptySet()).contains(player);
+    }
+
+    public boolean toggleChannelMute(String channel, UUID speaker) {
+        if (!isMemberOfChannel(channel, speaker)) return false;
         Set<UUID> set = channelMuted.computeIfAbsent(channel, ignored -> ConcurrentHashMap.newKeySet());
         if (!set.add(speaker)) set.remove(speaker);
+        return true;
     }
 
     public boolean kickFromChannel(String channel, UUID target) {
         Set<UUID> members = channelMembers.get(channel);
         if (members == null || !members.remove(target)) return false;
+
+        if (privateOwners.get(channel) != null && privateOwners.get(channel).equals(target)) {
+            transferPrivateOwnership(channel, members);
+        }
+
         Player targetPlayer = Bukkit.getPlayer(target);
         if (targetPlayer != null) joinDefaultChannel(targetPlayer);
         cleanupPrivateChannelIfEmpty(channel);
@@ -233,9 +245,14 @@ public final class VoiceManager {
     }
 
     public double getRange(Player player) {
+        return getRange(player.getUniqueId());
+    }
+
+    public double getRange(UUID uuid) {
         double configured = plugin.getConfig().getDouble("voice.default-range", 32.0);
         double max = Math.max(4.0, plugin.getConfig().getDouble("voice.max-range", 96.0));
-        return Math.max(4.0, Math.min(max, configured));
+        double value = ranges.getOrDefault(uuid, configured);
+        return Math.max(4.0, Math.min(max, value));
     }
 
     public void setRange(Player player, double range) {
@@ -323,6 +340,21 @@ public final class VoiceManager {
         ));
     }
 
+    private void transferPrivateOwnership(String channel, Set<UUID> members) {
+        if (channel == null || !privateOwners.containsKey(channel)) return;
+        if (members == null || members.isEmpty()) {
+            privateOwners.remove(channel);
+            privatePasswords.remove(channel);
+            return;
+        }
+
+        UUID nextOwner = members.stream()
+                .filter(uuid -> Bukkit.getPlayer(uuid) != null)
+                .findFirst()
+                .orElse(members.iterator().next());
+        privateOwners.put(channel, nextOwner);
+    }
+
     private void cleanupPrivateChannelIfEmpty(String channel) {
         if (channel == null || !privateOwners.containsKey(channel)) return;
         Set<UUID> members = channelMembers.get(channel);
@@ -339,7 +371,11 @@ public final class VoiceManager {
         String channel = channels.get(uuid);
         if (channel != null) {
             Set<UUID> members = channelMembers.get(channel);
-            if (members != null) members.remove(uuid);
+            if (members != null) {
+                boolean wasOwner = uuid.equals(privateOwners.get(channel));
+                members.remove(uuid);
+                if (wasOwner) transferPrivateOwnership(channel, members);
+            }
             cleanupPrivateChannelIfEmpty(channel);
         }
         for (Set<UUID> members : channelMembers.values()) members.remove(uuid);
