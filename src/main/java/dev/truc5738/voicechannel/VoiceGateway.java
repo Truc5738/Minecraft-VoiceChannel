@@ -307,6 +307,7 @@ public final class VoiceGateway {
         manager.setConnected(uuid, true);
         String sessionToken = findOrCreateSessionToken(uuid);
         session.send(HELLO, uuid, 0, ("OK\nSESSION:" + sessionToken).getBytes(StandardCharsets.UTF_8));
+        session.startAudioWriter();
         return true;
     }
 
