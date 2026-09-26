@@ -15,6 +15,7 @@ public final class VoiceClient {
     private static final int FRAME_MS = 20;
     private static final int SAMPLES = SAMPLE_RATE * FRAME_MS / 1000;
     private static final int FRAME_BYTES = SAMPLES * 2;
+    private static final int MAX_FRAME_SIZE = 16 * 1024;
 
     public static void main(String[] args) throws Exception {
         if (args.length != 4) {
@@ -45,6 +46,7 @@ public final class VoiceClient {
 
             socket.setTcpNoDelay(true);
             socket.setKeepAlive(true);
+            socket.setSoTimeout(35000);
 
             send(out, HELLO, uuid, 0, token.getBytes(StandardCharsets.UTF_8));
             UUID assignedUuid = readHelloAck(in, uuid);
@@ -111,6 +113,8 @@ public final class VoiceClient {
 
     private static void receive(Socket socket, DataInputStream in, DataOutputStream out,
                                 UUID self, SourceDataLine speaker, AtomicBoolean running) {
+        int lastAudioSequence = 0;
+        boolean haveAudioSequence = false;
         try {
             while (running.get() && !socket.isClosed()) {
                 if (in.readInt() != MAGIC) break;
@@ -118,15 +122,27 @@ public final class VoiceClient {
                 UUID sender = new UUID(in.readLong(), in.readLong());
                 int sequence = in.readInt();
                 int length = in.readInt();
-                if (length < 0 || length > 16384) break;
+                if (length < 0 || length > MAX_FRAME_SIZE) break;
 
                 byte[] payload = in.readNBytes(length);
                 if (payload.length != length) break;
 
-                if (type == AUDIO && !sender.equals(self)) {
-                    speaker.write(payload, 0, payload.length);
+                if (type == AUDIO) {
+                    if (length != FRAME_BYTES) break;
+                    if (sender.equals(self)) continue;
+                    if (haveAudioSequence && Integer.compareUnsigned(sequence, lastAudioSequence) <= 0) {
+                        continue;
+                    }
+                    lastAudioSequence = sequence;
+                    haveAudioSequence = true;
+                    speaker.write(payload, 0, FRAME_BYTES);
                 } else if (type == PING) {
+                    if (length != 0) break;
                     send(out, PONG, self, sequence, new byte[0]);
+                } else if (type == GOODBYE) {
+                    break;
+                } else if (type != PONG) {
+                    break;
                 }
             }
         } catch (IOException ignored) {
@@ -157,7 +173,8 @@ public final class VoiceClient {
     private static UUID readHelloAck(DataInputStream in, UUID self) throws IOException {
         if (in.readInt() != MAGIC || in.readByte() != HELLO) return null;
         UUID assigned = new UUID(in.readLong(), in.readLong());
-        in.readInt();
+        int sequence = in.readInt();
+        if (sequence != 0) return null;
         int length = in.readInt();
         if (length <= 0 || length > 1024) return null;
         byte[] payload = in.readNBytes(length);
