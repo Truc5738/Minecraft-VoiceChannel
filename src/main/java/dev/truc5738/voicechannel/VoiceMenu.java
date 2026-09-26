@@ -123,23 +123,50 @@ public final class VoiceMenu implements Listener {
     }
 
     private void openBedrockChannels(Player player) {
+        openBedrockChannels(player, 0);
+    }
+
+    private void openBedrockChannels(Player player, int page) {
         List<String> channels = new ArrayList<>(manager.getPublicChannels());
         channels.sort(String.CASE_INSENSITIVE_ORDER);
+        final int pageSize = 15;
+        int pages = Math.max(1, (channels.size() + pageSize - 1) / pageSize);
+        int current = Math.max(0, Math.min(page, pages - 1));
+        int start = current * pageSize;
+        int end = Math.min(start + pageSize, channels.size());
+
         SimpleForm.Builder form = SimpleForm.builder()
-                .title("Voice Channels")
+                .title("Voice Channels " + (current + 1) + "/" + pages)
                 .content("Current channel: " + manager.getChannel(player));
-        for (String channel : channels) form.button(channel);
+        for (int i = start; i < end; i++) form.button(channels.get(i));
+        if (current > 0) form.button("Previous");
+        if (current + 1 < pages) form.button("Next");
         form.button("Back");
+
         form.validResultHandler(result -> {
             int id = result.clickedButtonId();
-            if (id == channels.size()) {
+            int itemCount = end - start;
+            if (current > 0 && id == itemCount) {
+                openBedrockChannels(player, current - 1);
+                return;
+            }
+            int nextIndex = itemCount + (current > 0 ? 1 : 0);
+            if (current + 1 < pages && id == nextIndex) {
+                openBedrockChannels(player, current + 1);
+                return;
+            }
+            int backIndex = nextIndex + (current + 1 < pages ? 1 : 0);
+            if (id == backIndex) {
                 open(player);
                 return;
             }
-            if (id >= 0 && id < channels.size()) {
-                String channel = channels.get(id);
-                if (manager.joinChannel(player, channel)) {
-                    player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channel);
+            if (id >= 0 && id < itemCount) {
+                int index = start + id;
+                if (index < channels.size()) {
+                    String channel = channels.get(index);
+                    if (manager.joinChannel(player, channel)) {
+                        player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channel);
+                    }
                 }
             }
             open(player);
@@ -148,28 +175,58 @@ public final class VoiceMenu implements Listener {
     }
 
     private void openBedrockMutePlayers(Player player) {
+        openBedrockMutePlayers(player, 0);
+    }
+
+    private void openBedrockMutePlayers(Player player, int page) {
         List<Player> targets = new ArrayList<>();
         for (Player target : Bukkit.getOnlinePlayers()) {
             if (!target.equals(player)) targets.add(target);
         }
         targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
+        final int pageSize = 15;
+        int pages = Math.max(1, (targets.size() + pageSize - 1) / pageSize);
+        int current = Math.max(0, Math.min(page, pages - 1));
+        int start = current * pageSize;
+        int end = Math.min(start + pageSize, targets.size());
+
         SimpleForm.Builder form = SimpleForm.builder()
-                .title("Player Mute")
+                .title("Player Mute " + (current + 1) + "/" + pages)
                 .content("Select a player to mute or unmute.");
-        for (Player target : targets) {
+        for (int i = start; i < end; i++) {
+            Player target = targets.get(i);
             form.button(target.getName() + (manager.isMuted(player, target) ? " [Muted]" : ""));
         }
+        if (current > 0) form.button("Previous");
+        if (current + 1 < pages) form.button("Next");
         form.button("Back");
+
         form.validResultHandler(result -> {
             int id = result.clickedButtonId();
-            if (id == targets.size()) {
+            int itemCount = end - start;
+            if (current > 0 && id == itemCount) {
+                openBedrockMutePlayers(player, current - 1);
+                return;
+            }
+            int nextIndex = itemCount + (current > 0 ? 1 : 0);
+            if (current + 1 < pages && id == nextIndex) {
+                openBedrockMutePlayers(player, current + 1);
+                return;
+            }
+            int backIndex = nextIndex + (current + 1 < pages ? 1 : 0);
+            if (id == backIndex) {
                 open(player);
                 return;
             }
-            if (id >= 0 && id < targets.size()) {
-                Player target = targets.get(id);
-                manager.toggleMute(player, target);
-                player.sendMessage(ChatColor.GREEN + (manager.isMuted(player, target) ? "Player muted." : "Player unmuted."));
+            if (id >= 0 && id < itemCount) {
+                int index = start + id;
+                if (index < targets.size()) {
+                    Player target = targets.get(index);
+                    if (target.isOnline()) {
+                        manager.toggleMute(player, target);
+                        player.sendMessage(ChatColor.GREEN + (manager.isMuted(player, target) ? "Player muted." : "Player unmuted."));
+                    }
+                }
             }
             open(player);
         });
@@ -200,6 +257,10 @@ public final class VoiceMenu implements Listener {
     }
 
     private void openBedrockModeration(Player player) {
+        openBedrockModeration(player, 0);
+    }
+
+    private void openBedrockModeration(Player player, int page) {
         if (!player.hasPermission("voicechannel.admin")) {
             player.sendMessage(ChatColor.RED + "You do not have permission.");
             return;
@@ -210,28 +271,56 @@ public final class VoiceMenu implements Listener {
             if (!target.equals(player) && manager.isMemberOfChannel(channel, target.getUniqueId())) targets.add(target);
         }
         targets.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
+        final int pageSize = 15;
+        int pages = Math.max(1, (targets.size() + pageSize - 1) / pageSize);
+        int current = Math.max(0, Math.min(page, pages - 1));
+        int start = current * pageSize;
+        int end = Math.min(start + pageSize, targets.size());
+
         SimpleForm.Builder form = SimpleForm.builder()
-                .title("Channel Moderation")
-                .content("Channel: " + manager.getChannel(player) + "\nSelect a member to moderate.");
-        for (Player target : targets) form.button(target.getName());
+                .title("Channel Moderation " + (current + 1) + "/" + pages)
+                .content("Channel: " + channel + "\nSelect a member to moderate.");
+        for (int i = start; i < end; i++) form.button(targets.get(i).getName());
+        if (current > 0) form.button("Previous");
+        if (current + 1 < pages) form.button("Next");
         form.button("Back");
+
         form.validResultHandler(result -> {
             int id = result.clickedButtonId();
-            if (id == targets.size()) {
+            int itemCount = end - start;
+            if (current > 0 && id == itemCount) {
+                openBedrockModeration(player, current - 1);
+                return;
+            }
+            int nextIndex = itemCount + (current > 0 ? 1 : 0);
+            if (current + 1 < pages && id == nextIndex) {
+                openBedrockModeration(player, current + 1);
+                return;
+            }
+            int backIndex = nextIndex + (current + 1 < pages ? 1 : 0);
+            if (id == backIndex) {
                 open(player);
                 return;
             }
-            if (id >= 0 && id < targets.size()) {
-                Player target = targets.get(id);
-                openBedrockModerationActions(player, target);
+            if (id >= 0 && id < itemCount) {
+                int index = start + id;
+                if (index < targets.size()) {
+                    Player target = targets.get(index);
+                    if (target.isOnline() && manager.isMemberOfChannel(channel, target.getUniqueId())) {
+                        openBedrockModerationActions(player, target);
+                    } else {
+                        openBedrockModeration(player, current);
+                    }
+                }
                 return;
             }
-            open(player);
+            openBedrockModeration(player, current);
         });
         FloodgateApi.getInstance().sendForm(player.getUniqueId(), form);
     }
 
     private void openBedrockModerationActions(Player player, Player target) {
+        String channel = manager.getChannel(player);
         SimpleForm form = SimpleForm.builder()
                 .title("Moderation: " + target.getName())
                 .content("Choose an action for this channel.")
@@ -241,12 +330,17 @@ public final class VoiceMenu implements Listener {
                 .validResultHandler(result -> {
                     switch (result.clickedButtonId()) {
                         case 0 -> {
-                            if (manager.toggleChannelMute(manager.getChannel(player), target.getUniqueId())) {
-                                player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
+                            if (target.isOnline() && manager.isMemberOfChannel(channel, target.getUniqueId())) {
+                                if (manager.toggleChannelMute(channel, target.getUniqueId())) {
+                                    player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
+                                }
+                            } else {
+                                player.sendMessage(ChatColor.RED + "Player is no longer in your channel.");
                             }
                         }
                         case 1 -> {
-                            if (!manager.kickFromChannel(manager.getChannel(player), target.getUniqueId())) {
+                            if (!target.isOnline() || !manager.isMemberOfChannel(channel, target.getUniqueId())
+                                    || !manager.kickFromChannel(channel, target.getUniqueId())) {
                                 player.sendMessage(ChatColor.RED + "Player is no longer in your channel.");
                             }
                         }
