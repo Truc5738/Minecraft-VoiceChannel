@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class VoiceGateway {
     private static final int MAX_FRAME_SIZE = 16 * 1024;
+    private static final int MAX_AUDIO_FRAMES_PER_SECOND = 75;
     private static final int MAGIC = 0x4D564331;
     private static final byte HELLO = 1;
     private static final byte AUDIO = 2;
@@ -226,6 +227,7 @@ public final class VoiceGateway {
                 if (type == AUDIO) {
                     handleAudio(session, sequence, payload);
                 } else if (type == PONG) {
+                    if (length != 0) return;
                     session.lastPongAt = System.currentTimeMillis();
                 } else if (type == GOODBYE) {
                     return;
@@ -323,6 +325,13 @@ public final class VoiceGateway {
         if (!manager.isConnected(session.uuid) || manager.isMicMuted(session.uuid)) return;
         if (payload.length != 640) return;
         if (session.lastAudioSequence >= 0 && Integer.compareUnsigned(sequence, session.lastAudioSequence) <= 0) return;
+
+        long now = System.currentTimeMillis();
+        if (now - session.audioWindowStartedAt >= 1_000L) {
+            session.audioWindowStartedAt = now;
+            session.audioFramesInWindow = 0;
+        }
+        if (++session.audioFramesInWindow > MAX_AUDIO_FRAMES_PER_SECOND) return;
         session.lastAudioSequence = sequence;
 
         VoiceRoute speaker = manager.getRoute(session.uuid);
@@ -418,6 +427,8 @@ public final class VoiceGateway {
         private volatile long lastPongAt = System.currentTimeMillis();
         private int heartbeatSequence;
         private int lastAudioSequence = -1;
+        private long audioWindowStartedAt = System.currentTimeMillis();
+        private int audioFramesInWindow;
         private volatile boolean audioWriterRunning;
         private Thread audioWriter;
 
