@@ -51,3 +51,141 @@ public final class VoiceClient {
                  DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
                  TargetDataLine mic = (TargetDataLine) AudioSystem.getLine(new DataLine.Info(TargetDataLine.class, format));
                  SourceDataLine speaker = (SourceDataLine) AudioSystem.getLine(new DataLine.Info(SourceDataLine.class, format))) {
+
+                send(out, HELLO, uuid, 0, token.getBytes(StandardCharsets.UTF_8));
+                UUID assignedUuid = readHelloAck(in, uuid);
+                if (assignedUuid == null) throw new IOException("Voice gateway authentication rejected.");
+                uuid = assignedUuid;
+
+                final UUID voiceUuid = uuid;
+                final AtomicBoolean running = new AtomicBoolean(true);
+                final AtomicInteger sequence = new AtomicInteger();
+
+                mic.open(format);
+                speaker.open(format);
+                mic.start();
+                speaker.start();
+
+                Thread receiver = new Thread(
+                        () -> receive(socket, in, out, voiceUuid, speaker, running),
+                        "VoiceClient-Receiver");
+                receiver.setDaemon(true);
+                receiver.start();
+
+                Thread capture = new Thread(
+                        () -> capture(socket, out, voiceUuid, mic, running, sequence),
+                        "VoiceClient-Capture");
+                capture.setDaemon(true);
+                capture.start();
+
+                System.out.println("Connected. Microphone is active. Press Enter to stop.");
+                System.in.read();
+
+                if (running.compareAndSet(true, false)) {
+                    sendGoodbye(out, voiceUuid);
+                    try { mic.stop(); } catch (Exception ignored) {}
+                    try { speaker.stop(); } catch (Exception ignored) {}
+                    try { socket.close(); } catch (IOException ignored) {}
+                }
+                receiver.interrupt();
+                capture.interrupt();
+            }
+        }
+    }
+
+    private static void capture(Socket socket, DataOutputStream out, UUID uuid,
+                                TargetDataLine mic, AtomicBoolean running, AtomicInteger sequence) {
+        byte[] frame = new byte[FRAME_BYTES];
+        try {
+            while (running.get() && !socket.isClosed()) {
+                int offset = 0;
+                while (running.get() && offset < frame.length) {
+                    int n = mic.read(frame, offset, frame.length - offset);
+                    if (n <= 0) break;
+                    offset += n;
+                }
+                if (running.get() && offset == frame.length) {
+                    send(out, AUDIO, uuid, sequence.getAndIncrement(), frame);
+                }
+            }
+        } catch (IOException ignored) {
+            running.set(false);
+            try { socket.close(); } catch (IOException ignoredClose) {}
+        } finally {
+            try { mic.stop(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static void receive(Socket socket, DataInputStream in, DataOutputStream out,
+                                UUID self, SourceDataLine speaker, AtomicBoolean running) {
+        final Map<UUID, Integer> lastAudioSequences = new HashMap<>();
+        try {
+            while (running.get() && !socket.isClosed()) {
+                if (in.readInt() != MAGIC) break;
+                byte type = in.readByte();
+                UUID sender = new UUID(in.readLong(), in.readLong());
+                int sequence = in.readInt();
+                int length = in.readInt();
+                if (length < 0 || length > MAX_FRAME_SIZE) break;
+
+                byte[] payload = in.readNBytes(length);
+                if (payload.length != length) break;
+
+                if (type == AUDIO) {
+                    if (length != FRAME_BYTES) break;
+                    if (sender.equals(self)) continue;
+                    Integer last = lastAudioSequences.get(sender);
+                    if (last != null && Integer.compareUnsigned(sequence, last) <= 0) continue;
+                    lastAudioSequences.put(sender, sequence);
+                    speaker.write(payload, 0, FRAME_BYTES);
+                } else if (type == PING) {
+                    if (length != 0) break;
+                    send(out, PONG, self, sequence, new byte[0]);
+                } else if (type == GOODBYE) {
+                    if (length != 0) break;
+                    break;
+                } else if (type == PONG) {
+                    if (length != 0) break;
+                } else {
+                    break;
+                }
+            }
+        } catch (IOException ignored) {
+        } finally {
+            running.set(false);
+            try { socket.close(); } catch (IOException ignored) {}
+            try { speaker.stop(); } catch (Exception ignored) {}
+            try { speaker.flush(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static void sendGoodbye(DataOutputStream out, UUID uuid) {
+        try { send(out, GOODBYE, uuid, 0, new byte[0]); } catch (IOException ignored) {}
+    }
+
+    private static synchronized void send(DataOutputStream out, byte type, UUID uuid,
+                                          int sequence, byte[] payload) throws IOException {
+        out.writeInt(MAGIC);
+        out.writeByte(type);
+        out.writeLong(uuid.getMostSignificantBits());
+        out.writeLong(uuid.getLeastSignificantBits());
+        out.writeInt(sequence);
+        out.writeInt(payload.length);
+        out.write(payload);
+        out.flush();
+    }
+
+    private static UUID readHelloAck(DataInputStream in, UUID self) throws IOException {
+        if (in.readInt() != MAGIC || in.readByte() != HELLO) return null;
+        UUID assigned = new UUID(in.readLong(), in.readLong());
+        int sequence = in.readInt();
+        if (sequence != 0) return null;
+        int length = in.readInt();
+        if (length <= 0 || length > 1024) return null;
+        byte[] payload = in.readNBytes(length);
+        if (payload.length != length) return null;
+        if (!new String(payload, StandardCharsets.UTF_8).startsWith("OK")) return null;
+        if (self.getMostSignificantBits() != 0L && !assigned.equals(self)) return null;
+        return assigned;
+    }
+}
