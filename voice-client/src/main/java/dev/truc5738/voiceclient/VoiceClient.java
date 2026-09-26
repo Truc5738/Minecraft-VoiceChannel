@@ -4,6 +4,8 @@ import javax.sound.sampled.*;
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -113,8 +115,7 @@ public final class VoiceClient {
 
     private static void receive(Socket socket, DataInputStream in, DataOutputStream out,
                                 UUID self, SourceDataLine speaker, AtomicBoolean running) {
-        int lastAudioSequence = 0;
-        boolean haveAudioSequence = false;
+        final Map<UUID, Integer> lastAudioSequences = new HashMap<>();
         try {
             while (running.get() && !socket.isClosed()) {
                 if (in.readInt() != MAGIC) break;
@@ -130,18 +131,19 @@ public final class VoiceClient {
                 if (type == AUDIO) {
                     if (length != FRAME_BYTES) break;
                     if (sender.equals(self)) continue;
-                    if (haveAudioSequence && Integer.compareUnsigned(sequence, lastAudioSequence) <= 0) {
-                        continue;
-                    }
-                    lastAudioSequence = sequence;
-                    haveAudioSequence = true;
+                    Integer last = lastAudioSequences.get(sender);
+                    if (last != null && Integer.compareUnsigned(sequence, last) <= 0) continue;
+                    lastAudioSequences.put(sender, sequence);
                     speaker.write(payload, 0, FRAME_BYTES);
                 } else if (type == PING) {
                     if (length != 0) break;
                     send(out, PONG, self, sequence, new byte[0]);
                 } else if (type == GOODBYE) {
+                    if (length != 0) break;
                     break;
-                } else if (type != PONG) {
+                } else if (type == PONG) {
+                    if (length != 0) break;
+                } else {
                     break;
                 }
             }
