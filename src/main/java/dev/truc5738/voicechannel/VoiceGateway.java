@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.Base64;
@@ -342,6 +343,9 @@ public final class VoiceGateway {
         if (speaker == null || speaker.micMuted() || manager.isChannelMuted(speaker.channel(), speaker.uuid())) return;
         manager.markSpeaking(session.uuid);
 
+        Map<Double, byte[]> volumeCache = new HashMap<>();
+        volumeCache.put(1.0, payload);
+
         for (Session recipient : new ArrayList<>(sessions.values())) {
             if (recipient.uuid == null || recipient.uuid.equals(session.uuid)) continue;
             if (!manager.isConnected(recipient.uuid)) continue;
@@ -350,7 +354,11 @@ public final class VoiceGateway {
             if (listener == null || !listener.canHear(speaker)) continue;
 
             double volume = manager.getVolume(recipient.uuid);
-            byte[] audio = applyVolume(payload, volume);
+            byte[] audio = volumeCache.get(volume);
+            if (audio == null) {
+                audio = applyVolume(payload, volume);
+                volumeCache.put(volume, audio);
+            }
             recipient.enqueueAudio(session.uuid, sequence, audio);
         }
     }
@@ -435,7 +443,6 @@ public final class VoiceGateway {
         private int audioFramesInWindow;
         private volatile boolean audioWriterRunning;
         private volatile long writeStartedAt;
-        private volatile long lastWriteCompletedAt = System.currentTimeMillis();
         private Thread audioWriter;
 
         private Session(Socket socket) {
@@ -490,7 +497,6 @@ public final class VoiceGateway {
                 output.writeInt(payload.length);
                 output.write(payload);
                 output.flush();
-                lastWriteCompletedAt = System.currentTimeMillis();
             } finally {
                 writeStartedAt = 0L;
             }
