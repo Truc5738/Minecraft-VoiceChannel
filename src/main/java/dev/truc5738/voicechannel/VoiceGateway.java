@@ -336,13 +336,9 @@ public final class VoiceGateway {
             VoiceRoute listener = manager.getRoute(recipient.uuid);
             if (listener == null || !listener.canHear(speaker)) continue;
 
-            try {
-                double volume = manager.getVolume(recipient.uuid);
-                byte[] audio = applyVolume(payload, volume);
-                recipient.enqueueAudio(session.uuid, sequence, audio);
-            } catch (IOException exception) {
-                removeSession(recipient);
-            }
+            double volume = manager.getVolume(recipient.uuid);
+            byte[] audio = applyVolume(payload, volume);
+            recipient.enqueueAudio(session.uuid, sequence, audio);
         }
     }
 
