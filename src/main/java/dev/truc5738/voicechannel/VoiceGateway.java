@@ -274,7 +274,10 @@ public final class VoiceGateway {
         if (credential.startsWith("SESSION:")) {
             String sessionToken = credential.substring("SESSION:".length());
             SessionCredential stored = credentials.get(sessionToken);
-            if (stored != null && stored.expiresAt >= System.currentTimeMillis()) {
+            boolean uuidOmitted = presentedUuid.getMostSignificantBits() == 0L
+                    && presentedUuid.getLeastSignificantBits() == 0L;
+            if (stored != null && stored.expiresAt >= System.currentTimeMillis()
+                    && (uuidOmitted || stored.uuid.equals(presentedUuid))) {
                 uuid = stored.uuid;
                 validSession = true;
             } else if (stored != null) {
