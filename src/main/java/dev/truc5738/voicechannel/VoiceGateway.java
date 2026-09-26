@@ -100,7 +100,7 @@ public final class VoiceGateway {
         if (serverSocket != null) {
             try { serverSocket.close(); } catch (IOException ignored) {}
         }
-        for (Session session : new ArrayList<>(sessions.values())) session.close();
+        for (Session session : new ArrayList<>(sessions.values())) removeSession(session);
         sessions.clear();
         pairings.clear();
         credentials.clear();
@@ -340,7 +340,7 @@ public final class VoiceGateway {
         return new UUID(input.readLong(), input.readLong());
     }
 
-    private String findOrCreateSessionToken(UUID uuid) {
+    private synchronized String findOrCreateSessionToken(UUID uuid) {
         long now = System.currentTimeMillis();
         credentials.entrySet().removeIf(e -> {
             boolean expired = e.getValue().expiresAt < now;
