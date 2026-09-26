@@ -2,6 +2,7 @@ package dev.truc5738.voiceclient;
 
 import javax.sound.sampled.*;
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -40,15 +41,16 @@ public final class VoiceClient {
         }
 
         AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
-        try (Socket socket = new Socket(host, port);
+        try (Socket socket = new Socket())
              DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
              DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
              TargetDataLine mic = (TargetDataLine) AudioSystem.getLine(new DataLine.Info(TargetDataLine.class, format));
              SourceDataLine speaker = (SourceDataLine) AudioSystem.getLine(new DataLine.Info(SourceDataLine.class, format))) {
 
+            socket.connect(new InetSocketAddress(host, port), 5000);
             socket.setTcpNoDelay(true);
             socket.setKeepAlive(true);
-            socket.setSoTimeout(35000);
+            socket.setSoTimeout(20000);
 
             send(out, HELLO, uuid, 0, token.getBytes(StandardCharsets.UTF_8));
             UUID assignedUuid = readHelloAck(in, uuid);
