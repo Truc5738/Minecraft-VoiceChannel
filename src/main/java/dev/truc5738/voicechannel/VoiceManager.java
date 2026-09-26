@@ -145,6 +145,7 @@ public final class VoiceManager {
         if (members == null || !members.remove(target)) return false;
         Player targetPlayer = Bukkit.getPlayer(target);
         if (targetPlayer != null) joinDefaultChannel(targetPlayer);
+        cleanupPrivateChannelIfEmpty(channel);
         return true;
     }
 
@@ -322,12 +323,24 @@ public final class VoiceManager {
         ));
     }
 
+    private void cleanupPrivateChannelIfEmpty(String channel) {
+        if (channel == null || !privateOwners.containsKey(channel)) return;
+        Set<UUID> members = channelMembers.get(channel);
+        if (members != null && !members.isEmpty()) return;
+
+        privateOwners.remove(channel);
+        privatePasswords.remove(channel);
+        channelMembers.remove(channel);
+        channelMuted.remove(channel);
+    }
+
     public void remove(Player player) {
         UUID uuid = player.getUniqueId();
         String channel = channels.get(uuid);
         if (channel != null) {
             Set<UUID> members = channelMembers.get(channel);
             if (members != null) members.remove(uuid);
+            cleanupPrivateChannelIfEmpty(channel);
         }
         for (Set<UUID> members : channelMembers.values()) members.remove(uuid);
         for (Set<UUID> muted : channelMuted.values()) muted.remove(uuid);
