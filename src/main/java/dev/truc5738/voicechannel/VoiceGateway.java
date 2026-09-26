@@ -303,15 +303,19 @@ public final class VoiceGateway {
     private void handleAudio(Session session, int sequence, byte[] payload) {
         if (sessions.get(session.uuid) != session) return;
         if (!manager.isConnected(session.uuid) || manager.isMicMuted(session.uuid)) return;
+
+        // The protocol uses fixed 20 ms PCM16 mono frames: 320 samples x 2 bytes = 640 bytes.
+        if (payload.length != 640) return;
         if (sequence < 0 || (session.lastAudioSequence >= 0 && sequence <= session.lastAudioSequence)) return;
         session.lastAudioSequence = sequence;
 
-        manager.markSpeaking(session.uuid);
         VoiceRoute speaker = manager.getRoute(session.uuid);
-        if (speaker == null || speaker.micMuted()) return;
+        if (speaker == null || speaker.micMuted() || manager.isChannelMuted(speaker.channel(), speaker.uuid())) return;
+        manager.markSpeaking(session.uuid);
 
         for (Session recipient : new ArrayList<>(sessions.values())) {
             if (recipient.uuid == null || recipient.uuid.equals(session.uuid)) continue;
+            if (!manager.isConnected(recipient.uuid)) continue;
 
             VoiceRoute listener = manager.getRoute(recipient.uuid);
             if (listener == null || !listener.canHear(speaker)) continue;
