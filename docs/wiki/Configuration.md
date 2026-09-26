@@ -37,8 +37,12 @@ The gateway uses:
 - authenticated sessions
 - bounded packet sizes
 - sequence validation
+- maximum 128 concurrent voice sessions
+- bounded per-listener audio queue (64 frames)
+- oldest queued audio is discarded first when a listener falls behind
+- stalled socket writes are terminated after 15 seconds
 
-A session that stops responding to heartbeats is removed.
+A session that stops responding to heartbeats or remains blocked on a write for too long is removed.
 
 ## Voice routing
 
