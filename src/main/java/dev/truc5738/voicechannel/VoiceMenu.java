@@ -169,6 +169,13 @@ public final class VoiceMenu implements Listener {
                 int index = start + id;
                 if (index < channels.size()) {
                     String channel = channels.get(index);
+                    List<String> currentChannels = new ArrayList<>(manager.getPublicChannels());
+                    currentChannels.sort(String.CASE_INSENSITIVE_ORDER);
+                    if (!currentChannels.contains(channel)) {
+                        player.sendMessage(ChatColor.RED + "Voice channel is no longer available.");
+                        openBedrockChannels(player, current);
+                        return;
+                    }
                     if (manager.joinChannel(player, channel)) {
                         player.sendMessage(ChatColor.GREEN + "Joined voice channel: " + channel);
                     }
