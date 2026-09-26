@@ -10,15 +10,15 @@ import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context
 import android.content.pm.PackageManager
 
 class MainActivity : Activity() {
-    private var socket: Socket? = null
-    private var running = false
-    private var wantConnection = false
-    private var connectionThread: Thread? = null
-    private var sessionToken: String? = null
+    @Volatile private var socket: Socket? = null
+    @Volatile private var wantConnection = false
+    @Volatile private var connectionThread: Thread? = null
+    @Volatile private var sessionToken: String? = null
     private var statusView: TextView? = null
     private val sampleRate = 16000
     private val frameBytes = sampleRate / 50 * 2
@@ -48,9 +48,20 @@ class MainActivity : Activity() {
 
         button.setOnClickListener {
             if (wantConnection) return@setOnClickListener
+            val hostValue = host.text.toString().trim()
+            val portValue = port.text.toString().trim().toIntOrNull() ?: 26467
+            val pairCode = pair.text.toString().trim()
+            if (hostValue.isBlank()) {
+                status.text = "Enter gateway host"
+                return@setOnClickListener
+            }
+            if (portValue !in 1..65535) {
+                status.text = "Invalid gateway port"
+                return@setOnClickListener
+            }
             wantConnection = true
             status.text = "Connecting..."
-            connectionThread = Thread {
+            val worker = Thread {
                 var firstConnection = true
                 while (wantConnection) {
                     try {
@@ -59,20 +70,12 @@ class MainActivity : Activity() {
                             wantConnection = false
                             break
                         }
-                        val hostValue = host.text.toString().trim()
-                        val portValue = port.text.toString().trim().toIntOrNull() ?: 26467
-                        val pairCode = pair.text.toString().trim()
-                        if (hostValue.isBlank()) {
-                            runOnUiThread { statusView?.text = "Enter gateway host" }
-                            wantConnection = false
-                            break
-                        }
+
                         val s = Socket(hostValue, portValue)
                         s.tcpNoDelay = true
                         s.keepAlive = true
                         s.soTimeout = 35000
                         socket = s
-                        running = true
 
                         val usePairing = pairCode.matches(Regex("\\d{6}"))
                         val credential = if (usePairing) {
@@ -81,8 +84,9 @@ class MainActivity : Activity() {
                             sessionToken?.let { "SESSION:" + it } ?: "PAIR:" + pairCode
                         }
 
+                        val connectionRunning = AtomicBoolean(true)
                         try {
-                            runVoice(s, credential, pair)
+                            runVoice(s, credential, pairCode, connectionRunning)
                         } catch (ex: Exception) {
                             if (sessionToken != null && ex.message == "SESSION_REJECTED") {
                                 sessionToken = null
@@ -92,33 +96,43 @@ class MainActivity : Activity() {
                             } else if (ex.message == "Pairing rejected") {
                                 runOnUiThread { statusView?.text = "Pairing rejected - enter a new code" }
                                 wantConnection = false
-                            } else {
-                                throw ex
+                            } else if (wantConnection) {
+                                runOnUiThread { statusView?.text = "Disconnected - retrying" }
                             }
+                        } finally {
+                            connectionRunning.set(false)
+                            closeSocketIfCurrent(s)
                         }
                         if (!wantConnection) break
-                    } catch (ex: Exception) {
-                        running = false
-                        try { socket?.close() } catch (_: Exception) {}
-                        socket = null
+                    } catch (_: Exception) {
                         if (wantConnection) runOnUiThread { statusView?.text = "Disconnected - retrying" }
                     }
                     if (wantConnection) {
-                        try { Thread.sleep(if (firstConnection) 3000L else 2000L) } catch (_: InterruptedException) { break }
+                        try {
+                            Thread.sleep(if (firstConnection) 3000L else 2000L)
+                        } catch (_: InterruptedException) {
+                            break
+                        }
                     }
                     firstConnection = false
                 }
-            }.also { it.isDaemon = true; it.start() }
+                if (!wantConnection) runOnUiThread { statusView?.text = "Disconnected" }
+            }.also { it.isDaemon = true }
+            connectionThread = worker
+            worker.start()
         }
+
         stop.setOnClickListener {
             wantConnection = false
-            running = false
-            try { socket?.close() } catch (_: Exception) {}
+            connectionThread?.interrupt()
+            val current = socket
+            socket = null
+            try { current?.close() } catch (_: Exception) {}
             runOnUiThread { statusView?.text = "Disconnected" }
         }
     }
 
-    private fun runVoice(s: Socket, token: String, pair: EditText) {
+    private fun runVoice(s: Socket, token: String, pairCode: String, connectionRunning: AtomicBoolean) {
         val input = DataInputStream(BufferedInputStream(s.getInputStream()))
         val output = DataOutputStream(BufferedOutputStream(s.getOutputStream()))
         var id = UUID(0L, 0L)
@@ -146,13 +160,12 @@ class MainActivity : Activity() {
             }
             throw IOException("Pairing rejected")
         }
-        ackText.lineSequence().firstOrNull { it.startsWith("SESSION:") }?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
-            sessionToken = it
-            getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
-            if (token.startsWith("PAIR:")) {
-                runOnUiThread { pair.setText("") }
+        ackText.lineSequence().firstOrNull { it.startsWith("SESSION:") }
+            ?.substringAfter("SESSION:")?.takeIf { it.isNotBlank() }?.let {
+                sessionToken = it
+                getPreferences(Context.MODE_PRIVATE).edit().putString("session_token", it).apply()
+                if (token.startsWith("PAIR:")) runOnUiThread { statusView?.let { _ -> } }
             }
-        }
         id = UUID(assignedMsb, assignedLsb)
         runOnUiThread { statusView?.text = "Connected" }
 
@@ -161,6 +174,7 @@ class MainActivity : Activity() {
         val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT, maxOf(min, frameBytes * 4))
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
             throw IOException("Microphone initialization failed")
         }
         val trackMin = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -173,12 +187,12 @@ class MainActivity : Activity() {
             .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
             .setBufferSizeInBytes(maxOf(trackMin, frameBytes * 4)).build()
 
-        Thread {
+        val receiver = Thread {
             val lastAudioSequences = HashMap<UUID, Int>()
             try {
                 if (track.state != AudioTrack.STATE_INITIALIZED) throw IOException("Speaker initialization failed")
                 track.play()
-                while (running) {
+                while (connectionRunning.get()) {
                     val header = ByteArray(29)
                     readFully(input, header)
                     val hb = ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN)
@@ -215,33 +229,50 @@ class MainActivity : Activity() {
                         else -> break
                     }
                 }
-            } catch (_: Exception) {}
-            running = false
-            try { recorder.stop() } catch (_: Exception) {}
-            try { recorder.release() } catch (_: Exception) {}
-            try { track.stop() } catch (_: Exception) {}
-            track.release()
-        }.start()
+            } catch (_: Exception) {
+            } finally {
+                connectionRunning.set(false)
+                try { recorder.stop() } catch (_: Exception) {}
+                try { recorder.release() } catch (_: Exception) {}
+                try { track.stop() } catch (_: Exception) {}
+                try { track.release() } catch (_: Exception) {}
+                try { s.close() } catch (_: Exception) {}
+            }
+        }.also { it.isDaemon = true }
 
-        recorder.startRecording()
+        receiver.start()
         val frame = ByteArray(frameBytes)
         var seq = 0
         try {
-            while (running) {
-                var off=0
-                while (off < frame.size && running) {
-                    val n=recorder.read(frame,off,frame.size-off)
-                    if(n<=0) break
-                    off+=n
+            recorder.startRecording()
+            while (connectionRunning.get()) {
+                var off = 0
+                while (off < frame.size && connectionRunning.get()) {
+                    val n = recorder.read(frame, off, frame.size - off)
+                    if (n <= 0) {
+                        connectionRunning.set(false)
+                        break
+                    }
+                    off += n
                 }
-                if(off==frame.size) send(output,2,id,seq++,frame)
+                if (off == frame.size && connectionRunning.get()) send(output, 2, id, seq++, frame)
             }
         } finally {
+            connectionRunning.set(false)
             try { recorder.stop() } catch (_: Exception) {}
-            recorder.release()
-            try { send(output,3,id,0,ByteArray(0)) } catch (_: Exception) {}
+            try { recorder.release() } catch (_: Exception) {}
+            try { send(output, 3, id, 0, ByteArray(0)) } catch (_: Exception) {}
             try { s.close() } catch (_: Exception) {}
-            running=false
+            receiver.join(1000)
+        }
+    }
+
+    private fun closeSocketIfCurrent(target: Socket) {
+        if (socket === target) {
+            socket = null
+            try { target.close() } catch (_: Exception) {}
+        } else {
+            try { target.close() } catch (_: Exception) {}
         }
     }
 
