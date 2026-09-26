@@ -81,7 +81,8 @@ class MainActivity : Activity() {
                             break
                         }
 
-                        val s = Socket(hostValue, portValue)
+                        val s = Socket()
+                        s.connect(java.net.InetSocketAddress(hostValue, portValue), 5000)
                         s.tcpNoDelay = true
                         s.keepAlive = true
                         s.soTimeout = 35000
