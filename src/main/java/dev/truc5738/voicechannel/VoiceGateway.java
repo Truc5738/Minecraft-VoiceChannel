@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 public final class VoiceGateway {
     private static final int MAX_FRAME_SIZE = 16 * 1024;
     private static final int MAX_AUDIO_FRAMES_PER_SECOND = 75;
+    private static final int MAX_SESSIONS = 128;
     private static final long MAX_WRITE_STALL_MILLIS = 15_000L;
     private static final int MAGIC = 0x4D564331;
     private static final byte HELLO = 1;
@@ -195,6 +196,10 @@ public final class VoiceGateway {
         while (running) {
             try {
                 Socket socket = serverSocket.accept();
+                if (sessions.size() >= MAX_SESSIONS) {
+                    try { socket.close(); } catch (IOException ignored) {}
+                    continue;
+                }
                 socket.setTcpNoDelay(true);
                 socket.setKeepAlive(true);
                 socket.setSoTimeout(35_000);
