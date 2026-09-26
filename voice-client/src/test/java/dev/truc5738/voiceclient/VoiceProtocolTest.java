@@ -56,7 +56,7 @@ class VoiceProtocolTest {
     }
 
     @Test
-    void controlFramesHaveNoPayload() {
+    void controlFramesHaveNoPayload() throws Exception {
         UUID id = UUID.randomUUID();
         assertEquals(29, frame(PING, id, 7, new byte[0]).length);
         assertEquals(29, frame(PONG, id, 7, new byte[0]).length);
