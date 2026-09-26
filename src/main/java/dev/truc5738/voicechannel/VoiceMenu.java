@@ -462,7 +462,7 @@ public final class VoiceMenu implements Listener {
                 player.sendMessage(ChatColor.YELLOW + "Channel mute toggled for " + target.getName() + ".");
             }
         }
-        openJavaModeration(player);
+        openJavaModeration(player, page);
     }
     private int parsePage(String title) {
         int slash = title.lastIndexOf('/');
